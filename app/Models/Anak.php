@@ -12,6 +12,7 @@ class Anak extends Model
 
     protected $table = 'anak';
     protected $primaryKey = 'id_anak';
+    public $incrementing = true;
     public $timestamps = false;
 
     protected $fillable = [
@@ -22,6 +23,7 @@ class Anak extends Model
         'jenis_kelamin',
         'tempat_lahir',
         'anak_ke',
+        "id_posyandu"
     ];
 
     protected $casts = [
@@ -32,6 +34,11 @@ class Anak extends Model
     public function orangTua()
     {
         return $this->belongsTo(OrangTua::class, 'id_orangtua', 'id_orangtua');
+    }
+
+    public function posyandu()
+    {
+        return $this->belongsTo(Posyandu::class, 'id_posyandu', 'id_posyandu');
     }
 
     public function dataPengukuran()
@@ -59,5 +66,14 @@ class Anak extends Model
     {
         $pengukuran = $this->pengukuranTerakhir;
         return $pengukuran?->dataStunting?->status_stunting ?? 'Belum Ada Data';
+    }
+
+    public function getUmurDisplayAttribute()
+    {
+        $months = $this->umur_bulan;
+        $years = floor($months / 12);
+        $remainingMonths = $months % 12;
+        
+        return "{$years} tahun {$remainingMonths} bulan";
     }
 }

@@ -34,6 +34,7 @@ class DataPengukuran extends Model
         'tinggi_badan' => 'decimal:2',
         'lingkar_kepala' => 'decimal:2',
         'lingkar_lengan' => 'decimal:2',
+        'created_at' => 'datetime',
     ];
 
     // Relationships

@@ -10,6 +10,7 @@ return new class extends Migration
     {
         Schema::create('anak', function (Blueprint $table) {
             $table->id('id_anak');
+            $table->foreignId('id_posyandu')->constrained('posyandu', 'id_posyandu')->onDelete('cascade');
             $table->foreignId('id_orangtua')->constrained('orang_tua', 'id_orangtua')->onDelete('cascade');
             $table->string('nama_anak', 100);
             $table->string('nik_anak', 16)->unique();
@@ -23,6 +24,12 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Matikan pengecekan foreign key sementara
+        Schema::disableForeignKeyConstraints();
+        
         Schema::dropIfExists('anak');
+        
+        // Hidupkan kembali
+        Schema::enableForeignKeyConstraints();
     }
 };

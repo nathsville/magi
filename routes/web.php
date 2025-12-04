@@ -99,19 +99,39 @@ Route::middleware('auth')->group(function () {
     
     // Petugas Puskesmas Routes
     Route::prefix('puskesmas')->name('puskesmas.')->middleware('role:Petugas Puskesmas')->group(function () {
+        // Dashboard
         Route::get('/dashboard', [PuskesmasController::class, 'dashboard'])->name('dashboard');
         
-        // Validasi Data
-        Route::get('/validasi', [PuskesmasController::class, 'validasi'])->name('validasi');
-        Route::get('/validasi/{id}', [PuskesmasController::class, 'validasiDetail'])->name('validasi.detail');
-        Route::post('/validasi/{id}', [PuskesmasController::class, 'validasiStore'])->name('validasi.store');
-        
-        // Monitoring
+        // Monitoring Data (dengan filter)
         Route::get('/monitoring', [PuskesmasController::class, 'monitoring'])->name('monitoring');
+        Route::get('/monitoring/filter', [PuskesmasController::class, 'monitoringFilter'])->name('monitoring.filter');
+        
+        // Validasi
+        Route::get('/validasi', [PuskesmasController::class, 'validasiIndex'])->name('validasi.index');
+        Route::get('/validasi/{id}', [PuskesmasController::class, 'validasiDetail'])->name('validasi.detail');
+        Route::post('/validasi/{id}', [PuskesmasController::class, 'validasiProses'])->name('validasi.proses');
+        Route::post('/validasi/bulk', [PuskesmasController::class, 'validasiBulk'])->name('validasi.bulk');
+        
+        // Input Data Pengukuran
+        Route::get('/input-data', [PuskesmasController::class, 'inputIndex'])->name('input.index');
+        Route::post('/input-data', [PuskesmasController::class, 'inputStore'])->name('input.store');
+        
+        // Data Anak
+        Route::get('/data-anak', [PuskesmasController::class, 'anakIndex'])->name('anak.index');
+        Route::get('/data-anak/{id}/edit', [PuskesmasController::class, 'anakEdit'])->name('anak.edit');
+        Route::put('/data-anak/{id}', [PuskesmasController::class, 'anakUpdate'])->name('anak.update');
+        
+        // Intervensi
+        Route::get('/intervensi', [PuskesmasController::class, 'intervensiIndex'])->name('intervensi.index');
+        Route::get('/intervensi/create/{id_anak}', [PuskesmasController::class, 'intervensiCreate'])->name('intervensi.create');
+        Route::post('/intervensi', [PuskesmasController::class, 'intervensiStore'])->name('intervensi.store');
+        Route::get('/intervensi/{id}/edit', [PuskesmasController::class, 'intervensiEdit'])->name('intervensi.edit');
+        Route::put('/intervensi/{id}', [PuskesmasController::class, 'intervensiUpdate'])->name('intervensi.update');
         
         // Laporan
-        Route::get('/laporan', [PuskesmasController::class, 'laporan'])->name('laporan');
+        Route::get('/laporan', [PuskesmasController::class, 'laporanIndex'])->name('laporan.index');
         Route::post('/laporan/generate', [PuskesmasController::class, 'laporanGenerate'])->name('laporan.generate');
+        Route::get('/laporan/download/{id}', [PuskesmasController::class, 'laporanDownload'])->name('laporan.download');
     });
     
     // Petugas DPPKB Routes
