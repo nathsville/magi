@@ -8,10 +8,8 @@ class Notifikasi extends Model
 {
     protected $table = 'notifikasi';
     protected $primaryKey = 'id_notifikasi';
+    public $timestamps = false;
 
-    public $timestamps = false; 
-    protected $guarded = [];
-    
     protected $fillable = [
         'id_user',
         'id_stunting',
@@ -19,33 +17,50 @@ class Notifikasi extends Model
         'pesan',
         'tipe_notifikasi',
         'status_baca',
-        'tanggal_kirim'
+        'tanggal_kirim',
+        'created_at'
     ];
 
     protected $casts = [
-        'tanggal_kirim' => 'datetime'
+        'tanggal_kirim' => 'datetime',
+        'created_at' => 'datetime'
     ];
 
-    // Relasi ke User
+    // Relationships
     public function user()
     {
         return $this->belongsTo(User::class, 'id_user', 'id_user');
     }
 
-    // Relasi ke Data Stunting
-    public function dataStunting()
+    public function stunting()
     {
         return $this->belongsTo(DataStunting::class, 'id_stunting', 'id_stunting');
     }
 
-    // Scope untuk filter
-    public function scopeBelumDibaca($query)
+    // Scopes
+    public function scopeUnread($query)
     {
         return $query->where('status_baca', 'Belum Dibaca');
     }
 
-    public function scopeByTipe($query, $tipe)
+    public function scopeRead($query)
     {
-        return $query->where('tipe_notifikasi', $tipe);
+        return $query->where('status_baca', 'Sudah Dibaca');
+    }
+
+    public function scopeByType($query, $type)
+    {
+        return $query->where('tipe_notifikasi', $type);
+    }
+
+    // Accessors
+    public function getIsUnreadAttribute()
+    {
+        return $this->status_baca === 'Belum Dibaca';
+    }
+
+    public function getFormattedDateAttribute()
+    {
+        return $this->tanggal_kirim->format('d F Y, H:i');
     }
 }

@@ -2,13 +2,10 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class OrangTua extends Model
 {
-    use HasFactory;
-
     protected $table = 'orang_tua';
     protected $primaryKey = 'id_orangtua';
     public $timestamps = false;
@@ -16,18 +13,32 @@ class OrangTua extends Model
     protected $fillable = [
         'id_user',
         'nik',
-        'nama',
+        'nama_ayah',
+        'nama_ibu',
         'alamat',
         'no_telepon',
-        'pekerjaan',
+        'pekerjaan_ayah',
+        'pekerjaan_ibu',
+        'pendidikan_ayah',
+        'pendidikan_ibu',
+        'created_at'
     ];
 
-    // Relationships
+    protected $casts = [
+        'created_at' => 'datetime'
+    ];
+
+    /**
+     * Relasi ke User
+     */
     public function user()
     {
         return $this->belongsTo(User::class, 'id_user', 'id_user');
     }
 
+    /**
+     * Relasi ke Anak
+     */
     public function anak()
     {
         return $this->hasMany(Anak::class, 'id_orangtua', 'id_orangtua');

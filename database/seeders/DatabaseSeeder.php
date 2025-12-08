@@ -12,11 +12,26 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
+            // Core Data
+            UserSeeder::class,
             PuskesmasSeeder::class,
             PosyanduSeeder::class,
-            UserSeeder::class,
-            AnakSeeder::class,
             DataMasterSeeder::class,
+            
+            // Anak & Orang Tua
+            // OrangTuaSeeder::class,
+            AnakSeeder::class,
+            
+            // Pengukuran & Stunting
+            DataPengukuranSeeder::class,
+            DataStuntingSeeder::class,
+            
+            // Intervensi (NEW)
+            IntervensiStuntingSeeder::class,
+            
+            // Supporting Data
+            NotifikasiSeeder::class,
+            LaporanSeeder::class,
         ]);
     }
 }

@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use App\Models\OrangTua;
 
@@ -16,7 +15,7 @@ class UserSeeder extends Seeder
     public function run(): void
     {
         // 1. Admin
-        $admin = User::create([
+        User::create([
             'username' => 'admin',
             'password' => Hash::make('admin123'),
             'nama' => 'Administrator',
@@ -27,7 +26,7 @@ class UserSeeder extends Seeder
         ]);
 
         // 2. Petugas DPPKB
-        $dppkb = User::create([
+        User::create([
             'username' => 'dppkb',
             'password' => Hash::make('dppkb123'),
             'nama' => 'Petugas DPPKB Parepare',
@@ -38,7 +37,7 @@ class UserSeeder extends Seeder
         ]);
 
         // 3. Petugas Puskesmas
-        $puskesmas1 = User::create([
+        User::create([
             'username' => 'puskesmas1',
             'password' => Hash::make('puskesmas123'),
             'nama' => 'Dr. Ahmad Yani',
@@ -48,7 +47,7 @@ class UserSeeder extends Seeder
             'status' => 'Aktif',
         ]);
 
-        $puskesmas2 = User::create([
+        User::create([
             'username' => 'puskesmas2',
             'password' => Hash::make('puskesmas123'),
             'nama' => 'Dr. Siti Nurhaliza',
@@ -59,7 +58,7 @@ class UserSeeder extends Seeder
         ]);
 
         // 4. Petugas Posyandu
-        $posyandu1 = User::create([
+        User::create([
             'username' => 'posyandu1',
             'password' => Hash::make('posyandu123'),
             'nama' => 'Ibu Fatimah',
@@ -69,7 +68,7 @@ class UserSeeder extends Seeder
             'status' => 'Aktif',
         ]);
 
-        $posyandu2 = User::create([
+        User::create([
             'username' => 'posyandu2',
             'password' => Hash::make('posyandu123'),
             'nama' => 'Ibu Aisyah',
@@ -79,7 +78,7 @@ class UserSeeder extends Seeder
             'status' => 'Aktif',
         ]);
 
-        $posyandu3 = User::create([
+        User::create([
             'username' => 'posyandu3',
             'password' => Hash::make('posyandu123'),
             'nama' => 'Ibu Khadijah',
@@ -90,26 +89,30 @@ class UserSeeder extends Seeder
         ]);
 
         // 5. Orang Tua
+        
+        // --- ORANG TUA 1 (Budi Santoso - Ayah) ---
         $orangtua1 = User::create([
             'username' => 'orangtua1',
             'password' => Hash::make('orangtua123'),
-            'nama' => 'Budi Santoso',
+            'nama' => 'Budi Santoso', // Nama User Account
             'role' => 'Orang Tua',
             'email' => 'budi.santoso@gmail.com',
             'no_telepon' => '081234567897',
             'status' => 'Aktif',
         ]);
 
-        // Buat profil orang tua
         OrangTua::create([
             'id_user' => $orangtua1->id_user,
             'nik' => '7371010101850001',
-            'nama' => 'Budi Santoso',
+            'nama_ayah' => 'Budi Santoso',      // Perbaikan: Masuk ke nama_ayah
+            'nama_ibu' => 'Siti Aminah',        // Perbaikan: Harus diisi (Data dummy istri)
             'alamat' => 'Jl. Jend. Ahmad Yani No. 45, Parepare',
             'no_telepon' => '081234567897',
-            'pekerjaan' => 'Wiraswasta',
+            'pekerjaan_ayah' => 'Wiraswasta',   // Perbaikan: Masuk ke pekerjaan_ayah
+            'pekerjaan_ibu' => 'Ibu Rumah Tangga' // Perbaikan: Tambahan data dummy
         ]);
 
+        // --- ORANG TUA 2 (Siti Aminah - Ibu) ---
         $orangtua2 = User::create([
             'username' => 'orangtua2',
             'password' => Hash::make('orangtua123'),
@@ -123,12 +126,15 @@ class UserSeeder extends Seeder
         OrangTua::create([
             'id_user' => $orangtua2->id_user,
             'nik' => '7371010101900002',
-            'nama' => 'Siti Aminah',
+            'nama_ayah' => 'Budi Santoso',      // Dummy Suami
+            'nama_ibu' => 'Siti Aminah',        // Nama user masuk ke nama_ibu
             'alamat' => 'Jl. Bau Massepe No. 12, Parepare',
             'no_telepon' => '081234567898',
-            'pekerjaan' => 'Ibu Rumah Tangga',
+            'pekerjaan_ayah' => 'Wiraswasta',
+            'pekerjaan_ibu' => 'Ibu Rumah Tangga'
         ]);
 
+        // --- ORANG TUA 3 (Andi Rahman - Ayah) ---
         $orangtua3 = User::create([
             'username' => 'orangtua3',
             'password' => Hash::make('orangtua123'),
@@ -142,12 +148,15 @@ class UserSeeder extends Seeder
         OrangTua::create([
             'id_user' => $orangtua3->id_user,
             'nik' => '7371010101880003',
-            'nama' => 'Andi Rahman',
+            'nama_ayah' => 'Andi Rahman',
+            'nama_ibu' => 'Rina Wati',          // Dummy Istri
             'alamat' => 'Jl. Jend. Sudirman No. 78, Parepare',
             'no_telepon' => '081234567899',
-            'pekerjaan' => 'PNS',
+            'pekerjaan_ayah' => 'PNS',
+            'pekerjaan_ibu' => 'Ibu Rumah Tangga'
         ]);
 
+        // --- ORANG TUA 4 (Dewi Lestari - Ibu) ---
         $orangtua4 = User::create([
             'username' => 'orangtua4',
             'password' => Hash::make('orangtua123'),
@@ -161,12 +170,15 @@ class UserSeeder extends Seeder
         OrangTua::create([
             'id_user' => $orangtua4->id_user,
             'nik' => '7371010101920004',
-            'nama' => 'Dewi Lestari',
+            'nama_ayah' => 'Joko Susilo',       // Dummy Suami
+            'nama_ibu' => 'Dewi Lestari',
             'alamat' => 'Jl. Lasinrang No. 23, Parepare',
             'no_telepon' => '081234567800',
-            'pekerjaan' => 'Guru',
+            'pekerjaan_ayah' => 'Karyawan Swasta',
+            'pekerjaan_ibu' => 'Guru'
         ]);
 
+        // --- ORANG TUA 5 (Muhammad Ridwan - Ayah) ---
         $orangtua5 = User::create([
             'username' => 'orangtua5',
             'password' => Hash::make('orangtua123'),
@@ -180,10 +192,12 @@ class UserSeeder extends Seeder
         OrangTua::create([
             'id_user' => $orangtua5->id_user,
             'nik' => '7371010101870005',
-            'nama' => 'Muhammad Ridwan',
+            'nama_ayah' => 'Muhammad Ridwan',
+            'nama_ibu' => 'Nurhayati',          // Dummy Istri
             'alamat' => 'Jl. Andi Makkasau No. 56, Parepare',
             'no_telepon' => '081234567801',
-            'pekerjaan' => 'Pedagang',
+            'pekerjaan_ayah' => 'Pedagang',
+            'pekerjaan_ibu' => 'Membantu Suami'
         ]);
     }
 }

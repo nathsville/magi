@@ -120,6 +120,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/data-anak', [PuskesmasController::class, 'anakIndex'])->name('anak.index');
         Route::get('/data-anak/{id}/edit', [PuskesmasController::class, 'anakEdit'])->name('anak.edit');
         Route::put('/data-anak/{id}', [PuskesmasController::class, 'anakUpdate'])->name('anak.update');
+        Route::delete('/data-anak/{id}', [PuskesmasController::class, 'anakDestroy'])->name('anak.destroy');
         
         // Intervensi
         Route::get('/intervensi', [PuskesmasController::class, 'intervensiIndex'])->name('intervensi.index');
@@ -130,8 +131,11 @@ Route::middleware('auth')->group(function () {
         
         // Laporan
         Route::get('/laporan', [PuskesmasController::class, 'laporanIndex'])->name('laporan.index');
-        Route::post('/laporan/generate', [PuskesmasController::class, 'laporanGenerate'])->name('laporan.generate');
-        Route::get('/laporan/download/{id}', [PuskesmasController::class, 'laporanDownload'])->name('laporan.download');
+        Route::get('/create', [PuskesmasController::class, 'laporanCreate'])->name('laporan.create');
+        Route::post('/laporan', [PuskesmasController::class, 'laporanStore'])->name('laporan.store');
+        Route::get('/{id}/preview', [PuskesmasController::class, 'laporanPreview'])->name('laporan.preview');
+        Route::get('/{id}/download', [PuskesmasController::class, 'laporanDownload'])->name('laporan.download');
+        Route::get('/preview-data', [PuskesmasController::class, 'laporanPreviewData'])->name('laporan.preview-data');
     });
     
     // Petugas DPPKB Routes
@@ -152,16 +156,35 @@ Route::middleware('auth')->group(function () {
     
     // Orang Tua Routes
     Route::prefix('orangtua')->name('orangtua.')->middleware('role:Orang Tua')->group(function () {
-        Route::get('/dashboard', [OrangTuaController::class, 'dashboard'])->name('dashboard');
+        // Dashboard
+    Route::get('/dashboard', [OrangTuaController::class, 'dashboard'])->name('dashboard');
+    
+    // Data Anak
+    Route::prefix('anak')->name('anak.')->group(function () {
+        Route::get('/', [OrangTuaController::class, 'anakIndex'])->name('index');
+        Route::get('/{id}/detail', [OrangTuaController::class, 'anakDetail'])->name('detail');
         
-        // Data Anak
-        Route::get('/data-anak', [OrangTuaController::class, 'dataAnak'])->name('data-anak');
-        Route::get('/data-anak/{id}', [OrangTuaController::class, 'dataAnakDetail'])->name('data-anak.detail');
-        
-        // Notifikasi
-        Route::get('/notifikasi', [OrangTuaController::class, 'notifikasi'])->name('notifikasi');
-        
-        // Riwayat Pengukuran
-        Route::get('/riwayat', [OrangTuaController::class, 'riwayat'])->name('riwayat');
+        // AJAX Endpoint for dynamic chart updates
+        Route::get('/{id}/chart-data', [OrangTuaController::class, 'getChartData'])->name('chart-data');
+    });
+    
+    // Notifikasi (will implement next)
+    Route::prefix('notifikasi')->name('notifikasi.')->group(function () {
+        Route::get('/', [OrangTuaController::class, 'notifikasiIndex'])->name('index');
+        Route::get('/{id}', [OrangTuaController::class, 'notifikasiShow'])->name('show');
+        Route::post('/{id}/mark-read', [OrangTuaController::class, 'notifikasiMarkRead'])->name('mark-read');
+        Route::post('/mark-all-read', [OrangTuaController::class, 'notifikasiMarkAllRead'])->name('mark-all-read');
+        Route::delete('/{id}', [OrangTuaController::class, 'notifikasiDelete'])->name('delete');
+    });
+    
+    // Edukasi (will implement next)
+    Route::prefix('edukasi')->name('edukasi.')->group(function () {
+        Route::get('/', [OrangTuaController::class, 'edukasiIndex'])->name('index');
+        Route::get('/{slug}', [OrangTuaController::class, 'edukasiShow'])->name('show');
+    });
+    
+    // Profile
+    Route::get('/profile', [OrangTuaController::class, 'profile'])->name('profile');
+    Route::put('/profile', [OrangTuaController::class, 'profileUpdate'])->name('profile.update');
     });
 });

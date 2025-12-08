@@ -2,17 +2,12 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Carbon\Carbon;
 
 class Anak extends Model
 {
-    use HasFactory;
-
     protected $table = 'anak';
     protected $primaryKey = 'id_anak';
-    public $incrementing = true;
     public $timestamps = false;
 
     protected $fillable = [
@@ -23,11 +18,12 @@ class Anak extends Model
         'jenis_kelamin',
         'tempat_lahir',
         'anak_ke',
-        "id_posyandu"
+        'created_at'
     ];
 
     protected $casts = [
         'tanggal_lahir' => 'date',
+        'created_at' => 'datetime'
     ];
 
     // Relationships
@@ -41,39 +37,43 @@ class Anak extends Model
         return $this->belongsTo(Posyandu::class, 'id_posyandu', 'id_posyandu');
     }
 
-    public function dataPengukuran()
+    public function pengukuran()
     {
         return $this->hasMany(DataPengukuran::class, 'id_anak', 'id_anak');
     }
 
-    // Helper methods
+    public function pengukuranTerakhir()
+    {
+        return $this->hasOne(DataPengukuran::class, 'id_anak', 'id_anak')
+            ->orderBy('tanggal_ukur', 'desc');
+    }
+
+    public function stuntingTerakhir()
+    {
+        return $this->hasOneThrough(
+            DataStunting::class,
+            DataPengukuran::class,
+            'id_anak', // Foreign key on DataPengukuran
+            'id_pengukuran', // Foreign key on DataStunting
+            'id_anak', // Local key on Anak
+            'id_pengukuran' // Local key on DataPengukuran
+        )->orderBy('data_pengukuran.tanggal_ukur', 'desc');
+    }
+
+    public function intervensiStunting()
+    {
+        return $this->hasMany(IntervensiStunting::class, 'id_anak', 'id_anak');
+    }
+
+    // Accessor: Calculate age in months
     public function getUmurBulanAttribute()
     {
-        return Carbon::parse($this->tanggal_lahir)->diffInMonths(Carbon::now());
+        return \Carbon\Carbon::parse($this->tanggal_lahir)->diffInMonths(\Carbon\Carbon::now());
     }
 
+    // Accessor: Calculate age in years
     public function getUmurTahunAttribute()
     {
-        return Carbon::parse($this->tanggal_lahir)->diffInYears(Carbon::now());
-    }
-
-    public function getPengukuranTerakhirAttribute()
-    {
-        return $this->dataPengukuran()->latest('tanggal_ukur')->first();
-    }
-
-    public function getStatusGiziTerakhirAttribute()
-    {
-        $pengukuran = $this->pengukuranTerakhir;
-        return $pengukuran?->dataStunting?->status_stunting ?? 'Belum Ada Data';
-    }
-
-    public function getUmurDisplayAttribute()
-    {
-        $months = $this->umur_bulan;
-        $years = floor($months / 12);
-        $remainingMonths = $months % 12;
-        
-        return "{$years} tahun {$remainingMonths} bulan";
+        return \Carbon\Carbon::parse($this->tanggal_lahir)->age;
     }
 }

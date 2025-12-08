@@ -99,7 +99,7 @@ function exportDashboardData(format = 'pdf') {
     // Create form and submit
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = '{{ route("puskesmas.laporan.generate") }}';
+    form.action = '{{ route("puskesmas.laporan.create") }}';
     
     const csrfInput = document.createElement('input');
     csrfInput.type = 'hidden';

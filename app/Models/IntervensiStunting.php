@@ -8,37 +8,41 @@ class IntervensiStunting extends Model
 {
     protected $table = 'intervensi_stunting';
     protected $primaryKey = 'id_intervensi';
-    public $timestamps = true;
-    
+    public $timestamps = false;
+
     protected $fillable = [
         'id_anak',
-        'id_stunting',
         'jenis_intervensi',
+        'deskripsi',
         'tanggal_pelaksanaan',
         'dosis_jumlah',
-        'penanggung_jawab',
-        'catatan_perkembangan',
+        'id_petugas',
         'status_tindak_lanjut',
-        'file_pendukung'
+        'catatan',
+        'file_pendukung',
+        'created_at',
+        'updated_at'
     ];
-    
+
     protected $casts = [
-        'tanggal_pelaksanaan' => 'date'
+        'tanggal_pelaksanaan' => 'date',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime'
     ];
-    
-    // Relasi
+
+    /**
+     * Relasi ke Anak
+     */
     public function anak()
     {
         return $this->belongsTo(Anak::class, 'id_anak', 'id_anak');
     }
-    
-    public function dataStunting()
-    {
-        return $this->belongsTo(DataStunting::class, 'id_stunting', 'id_stunting');
-    }
-    
+
+    /**
+     * Relasi ke Petugas
+     */
     public function petugas()
     {
-        return $this->belongsTo(User::class, 'penanggung_jawab', 'id_user');
+        return $this->belongsTo(User::class, 'id_petugas', 'id_user');
     }
 }

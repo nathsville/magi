@@ -35,6 +35,7 @@ class DataPengukuran extends Model
         'lingkar_kepala' => 'decimal:2',
         'lingkar_lengan' => 'decimal:2',
         'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     // Relationships

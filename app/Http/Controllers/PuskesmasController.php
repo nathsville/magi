@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class PuskesmasController extends Controller
 {
@@ -125,12 +126,17 @@ class PuskesmasController extends Controller
     public function monitoring(Request $request)
     {
         $user = Auth::user();
+        // Ambil puskesmas aktif
         $puskesmas = Puskesmas::where('status', 'Aktif')->first();
         
+        if (!$puskesmas) {
+            return redirect()->route('puskesmas.dashboard')->with('error', 'Data Puskesmas tidak ditemukan');
+        }
+
         $posyanduIds = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
             ->pluck('id_posyandu');
         
-        // Build query
+        // --- Query Utama ---
         $query = DataStunting::with([
                 'dataPengukuran.anak.orangTua',
                 'dataPengukuran.posyandu'
@@ -139,7 +145,7 @@ class PuskesmasController extends Controller
                 $q->whereIn('id_posyandu', $posyanduIds);
             });
         
-        // Apply filters
+        // --- Filter Logic ---
         if ($request->filled('posyandu')) {
             $query->whereHas('dataPengukuran', function($q) use ($request) {
                 $q->where('id_posyandu', $request->posyandu);
@@ -162,23 +168,46 @@ class PuskesmasController extends Controller
             });
         }
         
-        $dataMonitoring = $query->latest('created_at')->paginate(20);
+        // Apply Search (Nama Anak)
+        if ($request->filled('search')) {
+            $query->whereHas('dataPengukuran.anak', function($q) use ($request) {
+                $q->where('nama_anak', 'like', '%' . $request->search . '%');
+            });
+        }
         
-        // Get Posyandu list for filter
+        $dataStunting = $query->latest('created_at')->paginate(20);
+
+        // Hitung berdasarkan filter yang diterapkan atau data keseluruhan jika tanpa filter
+        $statsQuery = clone $query; 
+        $statsQuery->getQuery()->limit = null;
+        $statsQuery->getQuery()->offset = null;
+
+        $totalData = $statsQuery->count();
+        $totalStunting = (clone $statsQuery)->whereIn('status_stunting', ['Stunting Ringan', 'Stunting Sedang', 'Stunting Berat'])->count();
+        $persentaseStunting = $totalData > 0 ? round(($totalStunting / $totalData) * 100, 1) : 0;
+        $validatedCount = (clone $statsQuery)->where('status_validasi', 'Validated')->count();
+
+        // --- Data Pendukung View ---
         $posyanduList = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
             ->where('status', 'Aktif')
+            ->orderBy('nama_posyandu')
             ->get();
         
+        AuditHelper::log('VIEW', 'Monitoring', 'Melihat data monitoring stunting');
+
         return view('puskesmas.monitoring.index', compact(
-            'dataMonitoring',
+            'dataStunting',
             'posyanduList',
-            'puskesmas'
+            'puskesmas',
+            'totalData',
+            'totalStunting',
+            'persentaseStunting',
+            'validatedCount'
         ));
     }
 
     public function monitoringFilter(Request $request)
     {
-        // Panggil method monitoring yang sudah memiliki logika filter di dalamnya
         return $this->monitoring($request);
     }
     
@@ -878,81 +907,162 @@ class PuskesmasController extends Controller
     // ========================================
     
     /**
-     * List data anak
+     * Data Anak - Index
      */
     public function anakIndex(Request $request)
     {
+        $user = Auth::user();
         $puskesmas = Puskesmas::where('status', 'Aktif')->first();
         
+        if (!$puskesmas) {
+            return redirect()->route('puskesmas.dashboard')
+                ->with('error', 'Data Puskesmas tidak ditemukan');
+        }
+        
+        // Get posyandu IDs under this puskesmas
         $posyanduIds = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
             ->pluck('id_posyandu');
         
+        // Build query
         $query = Anak::with(['orangTua', 'posyandu'])
             ->whereIn('id_posyandu', $posyanduIds);
         
-        // Search
+        // Apply search filter
         if ($request->filled('search')) {
             $query->where(function($q) use ($request) {
                 $q->where('nama_anak', 'like', '%' . $request->search . '%')
-                  ->orWhere('nik_anak', 'like', '%' . $request->search . '%');
+                ->orWhere('nik_anak', 'like', '%' . $request->search . '%');
             });
         }
         
+        // Apply posyandu filter
+        if ($request->filled('posyandu')) {
+            $query->where('id_posyandu', $request->posyandu);
+        }
+        
+        // Apply jenis kelamin filter
+        if ($request->filled('jenis_kelamin')) {
+            $query->where('jenis_kelamin', $request->jenis_kelamin);
+        }
+        
+        // Get data with pagination
         $anakList = $query->orderBy('nama_anak')->paginate(20);
         
-        return view('puskesmas.anak.index', compact('anakList'));
+        // Get statistics
+        $totalAnak = Anak::whereIn('id_posyandu', $posyanduIds)->count();
+        $totalLakiLaki = Anak::whereIn('id_posyandu', $posyanduIds)
+            ->where('jenis_kelamin', 'L')->count();
+        $totalPerempuan = Anak::whereIn('id_posyandu', $posyanduIds)
+            ->where('jenis_kelamin', 'P')->count();
+        
+        // Calculate average age in months
+        $anakAll = Anak::whereIn('id_posyandu', $posyanduIds)->get();
+        $totalUmur = 0;
+        foreach ($anakAll as $anak) {
+            $totalUmur += \Carbon\Carbon::parse($anak->tanggal_lahir)->diffInMonths(now());
+        }
+        $rataUmur = $totalAnak > 0 ? round($totalUmur / $totalAnak) : 0;
+        
+        // Get posyandu list for filter
+        $posyanduList = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
+            ->where('status', 'Aktif')
+            ->orderBy('nama_posyandu')
+            ->get();
+        
+        return view('puskesmas.anak.index', compact(
+            'anakList',
+            'totalAnak',
+            'totalLakiLaki',
+            'totalPerempuan',
+            'rataUmur',
+            'posyanduList'
+        ));
     }
-    
+
     /**
-     * Form edit data anak
+     * UC-PUSK-05: Data Anak - Edit Form
      */
     public function anakEdit($id)
     {
         $anak = Anak::with(['orangTua', 'posyandu'])->findOrFail($id);
         
+        // Get puskesmas
         $puskesmas = Puskesmas::where('status', 'Aktif')->first();
         
+        // Get posyandu list
         $posyanduList = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
             ->where('status', 'Aktif')
+            ->orderBy('nama_posyandu')
             ->get();
         
         return view('puskesmas.anak.edit', compact('anak', 'posyanduList'));
     }
-    
+
     /**
-     * Update data anak
+     * UC-PUSK-05: Data Anak - Update
      */
     public function anakUpdate(Request $request, $id)
     {
         $request->validate([
             'nama_anak' => 'required|string|max:100',
             'nik_anak' => 'required|string|size:16|unique:anak,nik_anak,' . $id . ',id_anak',
-            'tanggal_lahir' => 'required|date|before:today',
             'jenis_kelamin' => 'required|in:L,P',
+            'tanggal_lahir' => 'required|date|before_or_equal:today',
             'tempat_lahir' => 'nullable|string|max:100',
-            'anak_ke' => 'nullable|integer|min:1',
+            'anak_ke' => 'nullable|integer|min:1|max:20',
             'id_posyandu' => 'required|exists:posyandu,id_posyandu'
+        ], [
+            'nama_anak.required' => 'Nama anak harus diisi',
+            'nik_anak.required' => 'NIK anak harus diisi',
+            'nik_anak.size' => 'NIK harus 16 digit',
+            'nik_anak.unique' => 'NIK sudah terdaftar',
+            'jenis_kelamin.required' => 'Jenis kelamin harus dipilih',
+            'tanggal_lahir.required' => 'Tanggal lahir harus diisi',
+            'tanggal_lahir.before_or_equal' => 'Tanggal lahir tidak boleh melebihi hari ini',
+            'id_posyandu.required' => 'Posyandu harus dipilih'
         ]);
-        
-        $anak = Anak::findOrFail($id);
-        
-        // Store old values for audit
-        $oldValues = $anak->toArray();
-        
-        $anak->update($request->all());
-        
-        // Log Activity
-        AuditHelper::log(
-            'UPDATE',
-            'Anak',
-            'Update data anak: ' . $anak->nama_anak,
-            $id,
-            $oldValues,
-            $anak->fresh()->toArray()
-        );
-        
-        return redirect()->route('puskesmas.anak.index')
-            ->with('success', 'Data anak berhasil diperbarui');
+
+        try {
+            DB::beginTransaction();
+
+            $anak = Anak::findOrFail($id);
+            
+            // Store old data for audit
+            $oldData = $anak->toArray();
+            
+            // Update data
+            $anak->update([
+                'nama_anak' => $request->nama_anak,
+                'nik_anak' => $request->nik_anak,
+                'jenis_kelamin' => $request->jenis_kelamin,
+                'tanggal_lahir' => $request->tanggal_lahir,
+                'tempat_lahir' => $request->tempat_lahir,
+                'anak_ke' => $request->anak_ke,
+                'id_posyandu' => $request->id_posyandu
+            ]);
+
+            // Log activity
+            AuditHelper::log(
+                'update_data_anak',
+                "Update data anak: {$anak->nama_anak}",
+                'update',
+                $oldData,
+                $anak->toArray()
+            );
+
+            DB::commit();
+
+            return redirect()->route('puskesmas.anak.index')
+                ->with('success', 'Data anak berhasil diperbarui');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error anakUpdate: ' . $e->getMessage());
+            
+            return back()
+                ->withInput()
+                ->with('error', 'Gagal memperbarui data: ' . $e->getMessage());
+        }
     }
     
     // ========================================
@@ -962,184 +1072,282 @@ class PuskesmasController extends Controller
     /**
      * List semua intervensi
      */
-    public function intervensiIndex()
+    public function intervensiIndex(Request $request)
     {
+        $user = Auth::user();
+        
+        // Get puskesmas
         $puskesmas = Puskesmas::where('status', 'Aktif')->first();
-        
+        if (!$puskesmas) {
+            return redirect()->back()->with('error', 'Data Puskesmas tidak ditemukan');
+        }
+
+        // Get posyandu IDs under this puskesmas
         $posyanduIds = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
-            ->pluck('id_posyandu');
-        
-        $intervensiList = IntervensiStunting::whereHas('anak', function($q) use ($posyanduIds) {
-                $q->whereIn('id_posyandu', $posyanduIds);
-            })
-            ->with(['anak.orangTua', 'dataStunting', 'petugas'])
-            ->latest('tanggal_pelaksanaan')
-            ->paginate(20);
-        
+            ->pluck('id_posyandu')
+            ->toArray();
+
+        // Build query
+        $query = IntervensiStunting::whereHas('anak', function($q) use ($posyanduIds) {
+            $q->whereIn('id_posyandu', $posyanduIds);
+        })->with(['anak.posyandu', 'petugas']);
+
+        // Apply filters
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->whereHas('anak', function($q) use ($search) {
+                $q->where('nama_anak', 'like', '%' . $search . '%');
+            });
+        }
+
+        if ($request->filled('jenis_intervensi')) {
+            $query->where('jenis_intervensi', $request->jenis_intervensi);
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status_tindak_lanjut', $request->status);
+        }
+
+        if ($request->filled('periode')) {
+            $periode = $request->periode; // Format: Y-m
+            $query->whereYear('tanggal_pelaksanaan', substr($periode, 0, 4))
+                  ->whereMonth('tanggal_pelaksanaan', substr($periode, 5, 2));
+        }
+
         // Statistics
         $totalIntervensi = IntervensiStunting::whereHas('anak', function($q) use ($posyanduIds) {
-                $q->whereIn('id_posyandu', $posyanduIds);
-            })->count();
-        
-        $selesai = IntervensiStunting::whereHas('anak', function($q) use ($posyanduIds) {
-                $q->whereIn('id_posyandu', $posyanduIds);
-            })
-            ->where('status_tindak_lanjut', 'Selesai')
-            ->count();
-        
+            $q->whereIn('id_posyandu', $posyanduIds);
+        })->count();
+
         $sedangBerjalan = IntervensiStunting::whereHas('anak', function($q) use ($posyanduIds) {
-                $q->whereIn('id_posyandu', $posyanduIds);
-            })
-            ->where('status_tindak_lanjut', 'Sedang Berjalan')
-            ->count();
-        
+            $q->whereIn('id_posyandu', $posyanduIds);
+        })->where('status_tindak_lanjut', 'Sedang Berjalan')->count();
+
+        $selesai = IntervensiStunting::whereHas('anak', function($q) use ($posyanduIds) {
+            $q->whereIn('id_posyandu', $posyanduIds);
+        })->where('status_tindak_lanjut', 'Selesai')->count();
+
+        // Paginate
+        $intervensiList = $query->orderBy('tanggal_pelaksanaan', 'desc')
+            ->paginate(20)
+            ->withQueryString();
+
         return view('puskesmas.intervensi.index', compact(
             'intervensiList',
             'totalIntervensi',
-            'selesai',
-            'sedangBerjalan'
+            'sedangBerjalan',
+            'selesai'
         ));
     }
-    
+
     /**
-     * Form create intervensi
+     * UC-PUSK-06: Intervensi Create Form
      */
-    public function intervensiCreate($id_anak)
+    public function intervensiCreate()
     {
-        $anak = Anak::with(['orangTua', 'posyandu'])->findOrFail($id_anak);
-        
-        // Get latest stunting data
-        $latestStunting = DataStunting::whereHas('dataPengukuran', function($q) use ($id_anak) {
-                $q->where('id_anak', $id_anak);
-            })
-            ->where('status_validasi', 'Validated')
-            ->whereIn('status_stunting', ['Stunting Ringan', 'Stunting Sedang', 'Stunting Berat'])
-            ->latest('created_at')
-            ->first();
-        
-        if (!$latestStunting) {
-            return redirect()->back()->with('error', 'Anak tidak memiliki data stunting yang tervalidasi');
+        // Get puskesmas
+        $puskesmas = Puskesmas::where('status', 'Aktif')->first();
+        if (!$puskesmas) {
+            return redirect()->back()->with('error', 'Data Puskesmas tidak ditemukan');
         }
-        
-        return view('puskesmas.intervensi.create', compact('anak', 'latestStunting'));
+
+        // Get posyandu IDs under this puskesmas
+        $posyanduIds = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
+            ->pluck('id_posyandu')
+            ->toArray();
+
+        // Get anak yang terindikasi stunting (status_stunting != 'Normal')
+        $anakStuntingList = Anak::whereIn('id_posyandu', $posyanduIds)
+            ->whereHas('dataPengukuran.dataStunting', function($q) {
+                $q->where('status_stunting', '!=', 'Normal');
+            })
+            ->with('posyandu')
+            ->orderBy('nama_anak')
+            ->get();
+
+        // Get petugas list (Petugas Posyandu & Petugas Puskesmas)
+        $petugasList = User::whereIn('role', ['Petugas Posyandu', 'Petugas Puskesmas'])
+            ->where('status', 'Aktif')
+            ->orderBy('nama')
+            ->get();
+
+        return view('puskesmas.intervensi.create', compact(
+            'anakStuntingList',
+            'petugasList'
+        ));
     }
-    
+
     /**
-     * Store intervensi
+     * UC-PUSK-06: Intervensi Store
      */
     public function intervensiStore(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'id_anak' => 'required|exists:anak,id_anak',
-            'id_stunting' => 'required|exists:data_stunting,id_stunting',
             'jenis_intervensi' => 'required|in:PMT,Suplemen/Vitamin,Edukasi Gizi,Rujukan RS,Konseling,Lainnya',
+            'deskripsi' => 'required|string|max:500',
             'tanggal_pelaksanaan' => 'required|date|before_or_equal:today',
             'dosis_jumlah' => 'nullable|string|max:100',
-            'catatan_perkembangan' => 'required|string|max:1000',
+            'id_petugas' => 'required|exists:users,id_user',
             'status_tindak_lanjut' => 'required|in:Sedang Berjalan,Selesai,Perlu Rujukan Lanjutan',
-            'file_pendukung' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048'
+            'catatan' => 'nullable|string|max:500',
+            'file_pendukung' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:2048'
+        ], [
+            'id_anak.required' => 'Nama anak harus dipilih',
+            'jenis_intervensi.required' => 'Jenis intervensi harus dipilih',
+            'deskripsi.required' => 'Deskripsi program harus diisi',
+            'tanggal_pelaksanaan.required' => 'Tanggal pelaksanaan harus diisi',
+            'tanggal_pelaksanaan.before_or_equal' => 'Tanggal pelaksanaan tidak boleh lebih dari hari ini',
+            'id_petugas.required' => 'Petugas penanggung jawab harus dipilih',
+            'status_tindak_lanjut.required' => 'Status tindak lanjut harus dipilih',
+            'file_pendukung.mimes' => 'Format file harus: PDF, JPG, PNG, DOC, DOCX',
+            'file_pendukung.max' => 'Ukuran file maksimal 2MB'
         ]);
-        
-        $data = $request->except('file_pendukung');
-        $data['penanggung_jawab'] = Auth::id();
-        
-        // Handle file upload
-        if ($request->hasFile('file_pendukung')) {
-            $file = $request->file('file_pendukung');
-            $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('intervensi', $filename, 'public');
-            $data['file_pendukung'] = $path;
+
+        try {
+            DB::beginTransaction();
+
+            // Handle file upload
+            $filePath = null;
+            if ($request->hasFile('file_pendukung')) {
+                $file = $request->file('file_pendukung');
+                $fileName = time() . '_' . str_replace(' ', '_', $file->getClientOriginalName());
+                $filePath = $file->storeAs('intervensi', $fileName, 'public');
+            }
+
+            // Create intervensi
+            $intervensi = IntervensiStunting::create([
+                'id_anak' => $validated['id_anak'],
+                'jenis_intervensi' => $validated['jenis_intervensi'],
+                'deskripsi' => $validated['deskripsi'],
+                'tanggal_pelaksanaan' => $validated['tanggal_pelaksanaan'],
+                'dosis_jumlah' => $validated['dosis_jumlah'],
+                'id_petugas' => $validated['id_petugas'],
+                'status_tindak_lanjut' => $validated['status_tindak_lanjut'],
+                'catatan' => $validated['catatan'],
+                'file_pendukung' => $filePath,
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            // Audit log
+            AuditHelper::log(
+                'create_intervensi',
+                'IntervensiStunting',
+                $intervensi->id_intervensi,
+                null,
+                $intervensi->toArray()
+            );
+
+            DB::commit();
+
+            return redirect()->route('puskesmas.intervensi.index')
+                ->with('success', 'Data intervensi berhasil ditambahkan');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            // Delete uploaded file if exists
+            if ($filePath && Storage::disk('public')->exists($filePath)) {
+                Storage::disk('public')->delete($filePath);
+            }
+
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Gagal menyimpan data: ' . $e->getMessage());
         }
-        
-        $intervensi = IntervensiStunting::create($data);
-        
-        // Log Activity
-        AuditHelper::log(
-            'CREATE',
-            'Intervensi Stunting',
-            'Menambahkan intervensi ' . $request->jenis_intervensi . ' untuk anak ID: ' . $request->id_anak,
-            $intervensi->id_intervensi,
-            null,
-            $intervensi->toArray()
-        );
-        
-        // Send notification to orang tua
-        $anak = Anak::with('orangTua')->findOrFail($request->id_anak);
-        
-        Notifikasi::create([
-            'id_user' => $anak->orangTua->id_user,
-            'id_stunting' => $request->id_stunting,
-            'judul' => 'Intervensi Kesehatan Anak',
-            'pesan' => 'Anak Anda (' . $anak->nama_anak . ') telah menerima intervensi ' . 
-                       $request->jenis_intervensi . ' pada ' . 
-                       Carbon::parse($request->tanggal_pelaksanaan)->locale('id')->isoFormat('D MMMM Y'),
-            'tipe_notifikasi' => 'Informasi',
-            'status_baca' => 'Belum Dibaca',
-            'tanggal_kirim' => now()
-        ]);
-        
-        return redirect()->route('puskesmas.intervensi.index')
-            ->with('success', 'Data intervensi berhasil ditambahkan');
     }
-    
+
     /**
-     * Form edit intervensi
+     * UC-PUSK-06: Intervensi Edit Form
      */
     public function intervensiEdit($id)
     {
-        $intervensi = IntervensiStunting::with(['anak.orangTua', 'dataStunting'])
+        $intervensi = IntervensiStunting::with(['anak.posyandu', 'petugas'])
             ->findOrFail($id);
-        
-        return view('puskesmas.intervensi.edit', compact('intervensi'));
+
+        // Get petugas list
+        $petugasList = User::whereIn('role', ['Petugas Posyandu', 'Petugas Puskesmas'])
+            ->where('status', 'Aktif')
+            ->orderBy('nama')
+            ->get();
+
+        return view('puskesmas.intervensi.edit', compact(
+            'intervensi',
+            'petugasList'
+        ));
     }
-    
+
     /**
-     * Update intervensi
+     * UC-PUSK-06: Intervensi Update
      */
     public function intervensiUpdate(Request $request, $id)
     {
-        $request->validate([
+        $intervensi = IntervensiStunting::findOrFail($id);
+
+        $validated = $request->validate([
+            'jenis_intervensi' => 'required|in:PMT,Suplemen/Vitamin,Edukasi Gizi,Rujukan RS,Konseling,Lainnya',
+            'deskripsi' => 'required|string|max:500',
             'tanggal_pelaksanaan' => 'required|date|before_or_equal:today',
             'dosis_jumlah' => 'nullable|string|max:100',
-            'catatan_perkembangan' => 'required|string|max:1000',
+            'id_petugas' => 'required|exists:users,id_user',
             'status_tindak_lanjut' => 'required|in:Sedang Berjalan,Selesai,Perlu Rujukan Lanjutan',
-            'file_pendukung' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048'
+            'catatan' => 'nullable|string|max:500',
+            'file_pendukung' => 'nullable|file|mimes:pdf,jpg,jpeg,png,doc,docx|max:2048'
+        ], [
+            'jenis_intervensi.required' => 'Jenis intervensi harus dipilih',
+            'deskripsi.required' => 'Deskripsi program harus diisi',
+            'tanggal_pelaksanaan.required' => 'Tanggal pelaksanaan harus diisi',
+            'tanggal_pelaksanaan.before_or_equal' => 'Tanggal pelaksanaan tidak boleh lebih dari hari ini',
+            'id_petugas.required' => 'Petugas penanggung jawab harus dipilih',
+            'status_tindak_lanjut.required' => 'Status tindak lanjut harus dipilih',
+            'file_pendukung.mimes' => 'Format file harus: PDF, JPG, PNG, DOC, DOCX',
+            'file_pendukung.max' => 'Ukuran file maksimal 2MB'
         ]);
-        
-        $intervensi = IntervensiStunting::findOrFail($id);
-        
-        // Store old values
-        $oldValues = $intervensi->toArray();
-        
-        $data = $request->except('file_pendukung');
-        
-        // Handle file upload
-        if ($request->hasFile('file_pendukung')) {
-            // Delete old file
-            if ($intervensi->file_pendukung) {
-                Storage::disk('public')->delete($intervensi->file_pendukung);
+
+        try {
+            DB::beginTransaction();
+
+            // Store old data for audit
+            $oldData = $intervensi->toArray();
+
+            // Handle file upload
+            if ($request->hasFile('file_pendukung')) {
+                // Delete old file if exists
+                if ($intervensi->file_pendukung && Storage::disk('public')->exists($intervensi->file_pendukung)) {
+                    Storage::disk('public')->delete($intervensi->file_pendukung);
+                }
+
+                $file = $request->file('file_pendukung');
+                $fileName = time() . '_' . str_replace(' ', '_', $file->getClientOriginalName());
+                $filePath = $file->storeAs('intervensi', $fileName, 'public');
+                $validated['file_pendukung'] = $filePath;
             }
-            
-            $file = $request->file('file_pendukung');
-            $filename = time() . '_' . $file->getClientOriginalName();
-            $path = $file->storeAs('intervensi', $filename, 'public');
-            $data['file_pendukung'] = $path;
+
+            // Update intervensi
+            $intervensi->update($validated);
+
+            // Audit log
+            AuditHelper::log(
+                'update_intervensi',
+                'IntervensiStunting',
+                $intervensi->id_intervensi,
+                $oldData,
+                $intervensi->fresh()->toArray()
+            );
+
+            DB::commit();
+
+            return redirect()->route('puskesmas.intervensi.index')
+                ->with('success', 'Data intervensi berhasil diperbarui');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Gagal memperbarui data: ' . $e->getMessage());
         }
-        
-        $intervensi->update($data);
-        
-        // Log Activity
-        AuditHelper::log(
-            'UPDATE',
-            'Intervensi Stunting',
-            'Update intervensi ID: ' . $id,
-            $id,
-            $oldValues,
-            $intervensi->fresh()->toArray()
-        );
-        
-        return redirect()->route('puskesmas.intervensi.index')
-            ->with('success', 'Data intervensi berhasil diperbarui');
     }
     
     // ========================================
@@ -1149,134 +1357,252 @@ class PuskesmasController extends Controller
     /**
      * Halaman laporan
      */
-    public function laporanIndex()
+    public function laporanIndex(Request $request)
     {
         $user = Auth::user();
-        $puskesmas = Puskesmas::where('status', 'Aktif')->first();
         
-        // Get laporan history
-        $laporanList = Laporan::where('id_pembuat', Auth::id())
-            ->where('jenis_laporan', 'Laporan Puskesmas')
-            ->latest('created_at')
-            ->paginate(10);
+        // Build query - only show reports created by current user or for their puskesmas
+        $query = Laporan::where('id_pembuat', $user->id_user)
+            ->with('pembuat');
+
+        // Apply filters
+        if ($request->filled('jenis_laporan')) {
+            $query->where('jenis_laporan', $request->jenis_laporan);
+        }
+
+        if ($request->filled('tahun')) {
+            $query->where('periode_tahun', $request->tahun);
+        }
+
+        if ($request->filled('bulan')) {
+            $query->where('periode_bulan', $request->bulan);
+        }
+
+        // Order
+        $order = $request->get('order', 'desc');
+        $query->orderBy('created_at', $order);
+
+        // Statistics
+        $totalLaporan = Laporan::where('id_pembuat', $user->id_user)->count();
         
-        return view('puskesmas.laporan.index', compact('laporanList', 'puskesmas'));
+        $laporanBulanIni = Laporan::where('id_pembuat', $user->id_user)
+            ->whereMonth('created_at', date('m'))
+            ->whereYear('created_at', date('Y'))
+            ->count();
+
+        $avgStunting = Laporan::where('id_pembuat', $user->id_user)
+            ->avg('persentase_stunting') ?? 0;
+
+        // Paginate
+        $laporanList = $query->paginate(10)->withQueryString();
+
+        return view('puskesmas.laporan.index', compact(
+            'laporanList',
+            'totalLaporan',
+            'laporanBulanIni',
+            'avgStunting'
+        ));
     }
-    
+
     /**
-     * Generate laporan
+     * UC-PUSK-03: Laporan Create Form
      */
-    public function laporanGenerate(Request $request)
+    public function laporanCreate()
     {
-        $request->validate([
-            'jenis_laporan' => 'required|in:Bulanan,Tahunan',
-            'periode_bulan' => 'required_if:jenis_laporan,Bulanan|nullable|integer|min:1|max:12',
-            'periode_tahun' => 'required|integer|min:2020|max:' . date('Y')
-        ]);
-        
+        return view('puskesmas.laporan.create');
+    }
+
+    /**
+     * UC-PUSK-03: Preview Data (AJAX)
+     */
+    public function laporanPreviewData(Request $request)
+    {
+        $bulan = $request->get('bulan');
+        $tahun = $request->get('tahun');
+
+        if (!$bulan || !$tahun) {
+            return response()->json([
+                'total_anak' => 0,
+                'total_normal' => 0,
+                'total_stunting' => 0
+            ]);
+        }
+
+        // Get puskesmas
         $puskesmas = Puskesmas::where('status', 'Aktif')->first();
-        
+        if (!$puskesmas) {
+            return response()->json(['error' => 'Puskesmas not found'], 404);
+        }
+
+        // Get posyandu IDs
         $posyanduIds = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
-            ->pluck('id_posyandu');
-        
-        // Generate report data
-        $reportData = $this->generateReportData(
-            $posyanduIds,
-            $request->jenis_laporan,
-            $request->periode_bulan,
-            $request->periode_tahun
-        );
-        
-        // Create Laporan record
-        $laporan = Laporan::create([
-            'jenis_laporan' => 'Laporan Puskesmas',
-            'id_pembuat' => Auth::id(),
-            'periode_bulan' => $request->periode_bulan,
-            'periode_tahun' => $request->periode_tahun,
-            'id_wilayah' => $puskesmas->id_puskesmas,
-            'tipe_wilayah' => 'Puskesmas',
-            'total_anak' => $reportData['total_anak'],
-            'total_stunting' => $reportData['total_stunting'],
-            'total_normal' => $reportData['total_normal'],
-            'persentase_stunting' => $reportData['persentase_stunting'],
-            'file_laporan' => null, // Will be generated
-            'tanggal_buat' => now()
-        ]);
-        
-        // Log
-        AuditHelper::log(
-            'CREATE',
-            'Laporan',
-            'Generate laporan Puskesmas periode ' . $request->periode_bulan . '/' . $request->periode_tahun,
-            $laporan->id_laporan,
-            null,
-            $laporan->toArray()
-        );
-        
-        // Generate PDF/Excel file here
-        // TODO: Implement PDF generation with Laravel DomPDF or similar
-        
-        return redirect()->route('puskesmas.laporan.index')
-            ->with('success', 'Laporan berhasil dibuat');
-    }
-    
-    /**
-     * Generate report data
-     */
-    private function generateReportData($posyanduIds, $jenisLaporan, $bulan, $tahun)
-    {
-        $query = DataStunting::whereHas('dataPengukuran', function($q) use ($posyanduIds, $bulan, $tahun) {
-            $q->whereIn('id_posyandu', $posyanduIds)
-              ->whereYear('tanggal_ukur', $tahun);
-            
-            if ($bulan) {
-                $q->whereMonth('tanggal_ukur', $bulan);
-            }
-        })->where('status_validasi', 'Validated');
-        
-        $totalAnak = $query->distinct('id_pengukuran')->count();
-        
-        $totalStunting = (clone $query)
-            ->whereIn('status_stunting', ['Stunting Ringan', 'Stunting Sedang', 'Stunting Berat'])
+            ->pluck('id_posyandu')
+            ->toArray();
+
+        // Calculate stats for the period
+        $startDate = Carbon::create($tahun, $bulan, 1)->startOfMonth();
+        $endDate = $startDate->copy()->endOfMonth();
+
+        $totalAnak = DataPengukuran::whereIn('id_posyandu', $posyanduIds)
+            ->whereBetween('tanggal_ukur', [$startDate, $endDate])
+            ->distinct('id_anak')
+            ->count('id_anak');
+
+        $totalStunting = DataStunting::whereHas('pengukuran', function($q) use ($posyanduIds, $startDate, $endDate) {
+                $q->whereIn('id_posyandu', $posyanduIds)
+                  ->whereBetween('tanggal_ukur', [$startDate, $endDate]);
+            })
+            ->where('status_stunting', '!=', 'Normal')
             ->count();
-        
-        $totalNormal = (clone $query)
-            ->where('status_stunting', 'Normal')
-            ->count();
-        
-        $persentaseStunting = $totalAnak > 0 ? round(($totalStunting / $totalAnak) * 100, 2) : 0;
-        
-        return [
+
+        $totalNormal = $totalAnak - $totalStunting;
+
+        return response()->json([
             'total_anak' => $totalAnak,
-            'total_stunting' => $totalStunting,
             'total_normal' => $totalNormal,
-            'persentase_stunting' => $persentaseStunting
-        ];
+            'total_stunting' => $totalStunting
+        ]);
     }
-    
+
     /**
-     * Download laporan
+     * UC-PUSK-03: Laporan Store
+     */
+    public function laporanStore(Request $request)
+    {
+        $validated = $request->validate([
+            'jenis_laporan' => 'required|in:Laporan Puskesmas,Laporan Daerah',
+            'periode_bulan' => 'required|integer|between:1,12',
+            'periode_tahun' => 'required|integer|min:2020|max:' . (date('Y') + 1)
+        ], [
+            'jenis_laporan.required' => 'Jenis laporan harus dipilih',
+            'periode_bulan.required' => 'Bulan periode harus dipilih',
+            'periode_tahun.required' => 'Tahun periode harus dipilih',
+            'periode_tahun.max' => 'Tahun tidak valid'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $user = Auth::user();
+            
+            // Get puskesmas
+            $puskesmas = Puskesmas::where('status', 'Aktif')->first();
+            if (!$puskesmas) {
+                return redirect()->back()->with('error', 'Data Puskesmas tidak ditemukan');
+            }
+
+            // Get posyandu IDs
+            $posyanduIds = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
+                ->pluck('id_posyandu')
+                ->toArray();
+
+            // Calculate statistics for the period
+            $startDate = Carbon::create($validated['periode_tahun'], $validated['periode_bulan'], 1)->startOfMonth();
+            $endDate = $startDate->copy()->endOfMonth();
+
+            $totalAnak = DataPengukuran::whereIn('id_posyandu', $posyanduIds)
+                ->whereBetween('tanggal_ukur', [$startDate, $endDate])
+                ->distinct('id_anak')
+                ->count('id_anak');
+
+            $totalStunting = DataStunting::whereHas('pengukuran', function($q) use ($posyanduIds, $startDate, $endDate) {
+                    $q->whereIn('id_posyandu', $posyanduIds)
+                      ->whereBetween('tanggal_ukur', [$startDate, $endDate]);
+                })
+                ->where('status_stunting', '!=', 'Normal')
+                ->count();
+
+            $totalNormal = $totalAnak - $totalStunting;
+            $persentaseStunting = $totalAnak > 0 ? round(($totalStunting / $totalAnak) * 100, 2) : 0;
+
+            // Generate filename
+            $filename = sprintf(
+                'laporan_%s_%s_%s.pdf',
+                strtolower(str_replace(' ', '_', $validated['jenis_laporan'])),
+                $validated['periode_tahun'],
+                str_pad($validated['periode_bulan'], 2, '0', STR_PAD_LEFT)
+            );
+
+            // Create laporan record
+            $laporan = Laporan::create([
+                'jenis_laporan' => $validated['jenis_laporan'],
+                'id_pembuat' => $user->id_user,
+                'periode_bulan' => $validated['periode_bulan'],
+                'periode_tahun' => $validated['periode_tahun'],
+                'id_wilayah' => $validated['jenis_laporan'] === 'Laporan Puskesmas' 
+                    ? $puskesmas->id_puskesmas 
+                    : 1, // Kabupaten/Kota ID
+                'tipe_wilayah' => $validated['jenis_laporan'] === 'Laporan Puskesmas' 
+                    ? 'Puskesmas' 
+                    : 'Kabupaten',
+                'total_anak' => $totalAnak,
+                'total_stunting' => $totalStunting,
+                'total_normal' => $totalNormal,
+                'persentase_stunting' => $persentaseStunting,
+                'file_laporan' => $filename,
+                'tanggal_buat' => now(),
+                'created_at' => now()
+            ]);
+
+            // Audit log
+            AuditHelper::log(
+                'create_laporan',
+                'Laporan',
+                $laporan->id_laporan,
+                null,
+                $laporan->toArray()
+            );
+
+            DB::commit();
+
+            return redirect()->route('puskesmas.laporan.preview', $laporan->id_laporan)
+                ->with('success', 'Laporan berhasil digenerate');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Gagal membuat laporan: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * UC-PUSK-03: Laporan Preview
+     */
+    public function laporanPreview($id)
+    {
+        $laporan = Laporan::with('pembuat')->findOrFail($id);
+
+        // Check authorization
+        if ($laporan->id_pembuat !== Auth::id()) {
+            abort(403, 'Unauthorized access');
+        }
+
+        return view('puskesmas.laporan.preview', compact('laporan'));
+    }
+
+    /**
+     * UC-PUSK-03: Laporan Download PDF
      */
     public function laporanDownload($id)
     {
-        $laporan = Laporan::findOrFail($id);
-        
+        $laporan = Laporan::with('pembuat')->findOrFail($id);
+
         // Check authorization
         if ($laporan->id_pembuat !== Auth::id()) {
-            abort(403, 'Unauthorized');
+            abort(403, 'Unauthorized access');
         }
-        
-        // Log
-        AuditHelper::log(
-            'VIEW',
-            'Laporan',
-            'Download laporan ID: ' . $id,
-            $id,
-            null,
-            null
-        );
-        
-        // TODO: Return actual file download
-        return redirect()->back()->with('info', 'Download laporan sedang dalam pengembangan');
+
+        // Generate PDF
+        $pdf = Pdf::loadView('puskesmas.laporan.pdf', compact('laporan'))
+            ->setPaper('a4', 'portrait')
+            ->setOptions([
+                'isHtml5ParserEnabled' => true,
+                'isRemoteEnabled' => true,
+                'defaultFont' => 'sans-serif'
+            ]);
+
+        return $pdf->download($laporan->file_laporan);
     }
 }

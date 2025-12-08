@@ -11,7 +11,9 @@ class DataStunting extends Model
 
     protected $table = 'data_stunting';
     protected $primaryKey = 'id_stunting';
-    public $timestamps = false;
+    
+    // PERBAIKAN 1: Aktifkan timestamps karena kolom created_at & updated_at sudah ada di tabel
+    public $timestamps = true;
 
     protected $fillable = [
         'id_pengukuran',
@@ -34,6 +36,12 @@ class DataStunting extends Model
 
     // Relationships
     public function dataPengukuran()
+    {
+        return $this->belongsTo(DataPengukuran::class, 'id_pengukuran', 'id_pengukuran');
+    }
+
+    // PERBAIKAN 2: Tambahkan fungsi ini agar 'NotifikasiSeeder' tidak error
+    public function pengukuran()
     {
         return $this->belongsTo(DataPengukuran::class, 'id_pengukuran', 'id_pengukuran');
     }

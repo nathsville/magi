@@ -10,18 +10,30 @@ return new class extends Migration
     {
         Schema::create('data_pengukuran', function (Blueprint $table) {
             $table->id('id_pengukuran');
+            
+            // Foreign Keys
             $table->foreignId('id_anak')->constrained('anak', 'id_anak')->onDelete('cascade');
             $table->foreignId('id_posyandu')->constrained('posyandu', 'id_posyandu')->onDelete('cascade');
             $table->foreignId('id_petugas')->constrained('users', 'id_user')->onDelete('cascade');
+            
             $table->date('tanggal_ukur');
-            $table->integer('umur_bulan');
+            // Menggunakan double agar bisa menerima umur desimal (misal: 24.5 bulan) seperti di seeder
+            $table->double('umur_bulan'); 
+            
             $table->decimal('berat_badan', 5, 2);
             $table->decimal('tinggi_badan', 5, 2);
             $table->decimal('lingkar_kepala', 5, 2);
             $table->decimal('lingkar_lengan', 5, 2);
+            
+            // --- KOLOM BARU DITAMBAHKAN ---
+            $table->enum('cara_ukur', ['Berdiri', 'Berbaring'])->default('Berdiri');
+            // ------------------------------
+
             $table->string('status_gizi', 50)->nullable();
             $table->text('catatan')->nullable();
-            $table->timestamp('created_at')->useCurrent();
+            
+            // Menggunakan timestamps() agar ada created_at DAN updated_at
+            $table->timestamps();
         });
     }
 
