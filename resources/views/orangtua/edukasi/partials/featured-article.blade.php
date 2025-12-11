@@ -1,35 +1,21 @@
-<div class="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl shadow-2xl overflow-hidden mb-6">
+<div class="relative rounded-xl overflow-hidden shadow-md group">
     <div class="grid grid-cols-1 md:grid-cols-2">
-        {{-- Image --}}
-        <div class="h-64 md:h-auto bg-cover bg-center" 
-             style="background-image: url('{{ $featured['gambar'] }}')">
-            <div class="w-full h-full bg-gradient-to-r from-purple-900 to-transparent opacity-60"></div>
+        <div class="h-64 md:h-auto bg-cover bg-center relative" style="background-image: url('{{ $featured['gambar'] }}')">
+            <div class="absolute inset-0 bg-[#000878]/40 group-hover:bg-[#000878]/30 transition-colors"></div>
         </div>
-
-        {{-- Content --}}
-        <div class="p-8 text-white">
-            <div class="flex items-center space-x-2 mb-4">
-                <span class="px-3 py-1 bg-white bg-opacity-20 rounded-full text-sm font-medium backdrop-blur-sm">
-                    <i class="fas fa-star mr-1"></i>Artikel Unggulan
-                </span>
-                <span class="px-3 py-1 bg-white bg-opacity-20 rounded-full text-sm font-medium backdrop-blur-sm">
-                    {{ $featured['kategori'] }}
-                </span>
+        <div class="p-8 bg-[#000878] text-white flex flex-col justify-center">
+            <div class="flex items-center space-x-2 mb-3">
+                <span class="px-2 py-0.5 bg-yellow-500 text-white text-xs font-bold uppercase rounded">Unggulan</span>
+                <span class="px-2 py-0.5 bg-white/20 text-white text-xs font-medium rounded">{{ $featured['kategori'] }}</span>
             </div>
-
-            <h2 class="text-3xl font-bold mb-4">{{ $featured['judul'] }}</h2>
-            <p class="text-lg text-purple-100 mb-6 leading-relaxed">{{ $featured['ringkasan'] }}</p>
-
-            <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-4 text-sm text-purple-200">
-                    <span><i class="fas fa-clock mr-2"></i>{{ $featured['durasi_baca'] }} menit</span>
-                    <span><i class="fas fa-calendar mr-2"></i>{{ \Carbon\Carbon::parse($featured['tanggal'])->format('d M Y') }}</span>
-                </div>
-                <a href="{{ route('orangtua.edukasi.show', $featured['slug']) }}" 
-                   class="px-6 py-3 bg-white text-purple-600 font-bold rounded-lg hover:bg-purple-50 transition shadow-lg">
-                    Baca Selengkapnya <i class="fas fa-arrow-right ml-2"></i>
-                </a>
-            </div>
+            <h2 class="text-2xl font-bold mb-3">{{ $featured['judul'] }}</h2>
+            <p class="text-blue-100 mb-6 line-clamp-3 text-sm leading-relaxed">{{ $featured['ringkasan'] }}</p>
+            
+            <a href="{{ route('orangtua.edukasi.show', $featured['slug']) }}" 
+               class="inline-flex items-center px-5 py-2.5 bg-white text-[#000878] font-bold text-sm rounded-lg hover:bg-blue-50 transition w-fit">
+                Baca Selengkapnya
+                <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </a>
         </div>
     </div>
 </div>

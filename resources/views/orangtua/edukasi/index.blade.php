@@ -2,26 +2,25 @@
 
 @section('title', 'Edukasi Gizi')
 
+@section('sidebar')
+    @include('orangtua.sidebar.sidebar-menu')
+@endsection
+
 @section('content')
-<div class="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
-    {{-- Header --}}
-    @include('orangtua.partials.header')
+<div class="space-y-6">
+    {{-- Page Header --}}
+    @include('orangtua.edukasi.partials.page-header')
 
-    <div class="container mx-auto px-4 py-6 max-w-7xl">
-        {{-- Page Header --}}
-        @include('orangtua.edukasi.partials.page-header')
+    {{-- Search & Filter --}}
+    @include('orangtua.edukasi.partials.search-filter', ['categories' => $categories])
 
-        {{-- Search & Filter Bar --}}
-        @include('orangtua.edukasi.partials.search-filter', ['categories' => $categories])
+    {{-- Featured Article --}}
+    @if(!request()->has('search') && !request()->has('kategori'))
+        @include('orangtua.edukasi.partials.featured-article', ['featured' => $edukasiContent[0]])
+    @endif
 
-        {{-- Featured Article --}}
-        @if(!request()->has('search') && !request()->has('kategori'))
-            @include('orangtua.edukasi.partials.featured-article', ['featured' => $edukasiContent[0]])
-        @endif
-
-        {{-- Articles Grid --}}
-        @include('orangtua.edukasi.partials.articles-grid', ['edukasiContent' => $edukasiContent])
-    </div>
+    {{-- Articles Grid --}}
+    @include('orangtua.edukasi.partials.articles-grid', ['edukasiContent' => $edukasiContent])
 </div>
 @endsection
 

@@ -45,6 +45,12 @@ class User extends Authenticatable
         return $this->hasOne(OrangTua::class, 'id_user', 'id_user');
     }
 
+    // Relasi ke Petugas Posyandu
+    public function posyandu()
+    {
+        return $this->hasOne(Posyandu::class, 'id_user', 'id_user');
+    }
+
     /**
      * Check if user has role
      */

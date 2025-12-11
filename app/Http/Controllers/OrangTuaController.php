@@ -9,10 +9,22 @@ use App\Models\Anak;
 use App\Models\DataPengukuran;
 use App\Models\DataStunting;
 use App\Models\Notifikasi;
+use App\Models\IntervensiStunting;
 use Carbon\Carbon;
 
 class OrangTuaController extends Controller
 {
+    /**
+     * Helper: Ambil jumlah notifikasi belum dibaca
+     * Digunakan agar sidebar di semua halaman memiliki data badge notifikasi
+     */
+    private function getUnreadNotifications($userId)
+    {
+        return Notifikasi::where('id_user', $userId)
+            ->where('status_baca', 'Belum Dibaca')
+            ->count();
+    }
+
     /**
      * UC-OT-01: Dashboard Orang Tua
      */
@@ -42,9 +54,7 @@ class OrangTuaController extends Controller
         })->count();
         
         // Unread notifications count
-        $unreadNotifications = Notifikasi::where('id_user', $user->id_user)
-            ->where('status_baca', 'Belum Dibaca')
-            ->count();
+        $unreadNotifications = $this->getUnreadNotifications($user->id_user);
         
         // Latest notifications (5 items)
         $latestNotifications = Notifikasi::where('id_user', $user->id_user)
@@ -52,45 +62,10 @@ class OrangTuaController extends Controller
             ->limit(5)
             ->get();
         
-        // Educational tips (random 3)
-        $edukasiTips = [
-            [
-                'icon' => '🥛',
-                'title' => 'ASI Eksklusif',
-                'description' => 'Berikan ASI eksklusif selama 6 bulan pertama untuk nutrisi optimal.'
-            ],
-            [
-                'icon' => '🍎',
-                'title' => 'Makanan Bergizi',
-                'description' => 'Berikan MPASI dengan 4 bintang: karbohidrat, protein hewani, protein nabati, sayur/buah.'
-            ],
-            [
-                'icon' => '🏥',
-                'title' => 'Imunisasi Lengkap',
-                'description' => 'Pastikan anak mendapat imunisasi lengkap sesuai jadwal Posyandu.'
-            ],
-            [
-                'icon' => '🧼',
-                'title' => 'Kebersihan',
-                'description' => 'Jaga kebersihan lingkungan dan biasakan cuci tangan sebelum makan.'
-            ],
-            [
-                'icon' => '📏',
-                'title' => 'Pantau Pertumbuhan',
-                'description' => 'Rutin mengukur berat dan tinggi badan anak di Posyandu setiap bulan.'
-            ],
-            [
-                'icon' => '💊',
-                'title' => 'Vitamin & Mineral',
-                'description' => 'Berikan suplemen vitamin A dan zat besi sesuai anjuran petugas kesehatan.'
-            ]
-        ];
+        // Educational tips
+        $edukasiTips = $this->getEdukasiTipsData();
         
-        // Shuffle and take 3
-        shuffle($edukasiTips);
-        $edukasiTips = array_slice($edukasiTips, 0, 3);
-        
-        return view('orangtua.dashboard', compact(
+        return view('orangtua.dashboard.index', compact(
             'orangTua',
             'anakList',
             'totalAnak',
@@ -112,11 +87,9 @@ class OrangTuaController extends Controller
             return redirect()->route('login')->with('error', 'Profil orang tua tidak ditemukan');
         }
 
-        // Get all children with latest status
         $query = Anak::where('id_orangtua', $orangTua->id_orangtua)
             ->with(['posyandu', 'pengukuranTerakhir', 'stuntingTerakhir']);
 
-        // Filter by status
         if ($request->filled('status')) {
             $query->whereHas('stuntingTerakhir', function($q) use ($request) {
                 if ($request->status === 'Normal') {
@@ -127,14 +100,12 @@ class OrangTuaController extends Controller
             });
         }
 
-        // Search by name
         if ($request->filled('search')) {
             $query->where('nama_anak', 'like', '%' . $request->search . '%');
         }
 
         $anakList = $query->get();
 
-        // Statistics
         $totalAnak = $anakList->count();
         $anakNormal = $anakList->filter(function($anak) {
             return $anak->stuntingTerakhir && $anak->stuntingTerakhir->status_stunting === 'Normal';
@@ -143,11 +114,15 @@ class OrangTuaController extends Controller
             return $anak->stuntingTerakhir && $anak->stuntingTerakhir->status_stunting !== 'Normal';
         })->count();
 
+        // Tambahkan variabel ini untuk sidebar
+        $unreadNotifications = $this->getUnreadNotifications($user->id_user);
+
         return view('orangtua.anak.index', compact(
             'anakList',
             'totalAnak',
             'anakNormal',
-            'anakStunting'
+            'anakStunting',
+            'unreadNotifications' 
         ));
     }
 
@@ -163,40 +138,34 @@ class OrangTuaController extends Controller
             return redirect()->route('login')->with('error', 'Profil orang tua tidak ditemukan');
         }
 
-        // Get anak with authorization check
         $anak = Anak::where('id_anak', $id)
             ->where('id_orangtua', $orangTua->id_orangtua)
             ->with(['posyandu', 'pengukuranTerakhir', 'stuntingTerakhir'])
             ->firstOrFail();
 
-        // Get measurement history (last 12 months or all if less)
         $riwayatPengukuran = DataPengukuran::where('id_anak', $anak->id_anak)
             ->with('stunting')
             ->orderBy('tanggal_ukur', 'desc')
             ->limit(12)
             ->get()
-            ->reverse(); // Reverse to show oldest first for charts
+            ->reverse();
 
-        // Get interventions
         $intervensiList = IntervensiStunting::where('id_anak', $anak->id_anak)
             ->with('petugas')
             ->orderBy('tanggal_pelaksanaan', 'desc')
             ->limit(5)
             ->get();
 
-        // Calculate age in months
         $umurBulan = Carbon::parse($anak->tanggal_lahir)->diffInMonths(Carbon::now());
-
-        // Prepare chart data
         $chartData = $this->prepareChartData($riwayatPengukuran, $anak);
-
-        // Get WHO standard ranges for reference
         $whoStandards = $this->getWHOStandards($anak->jenis_kelamin, $umurBulan);
 
-        // Calculate statistics
         $totalPengukuran = $riwayatPengukuran->count();
         $pengukuranTerakhir = $riwayatPengukuran->last();
         $statusTerakhir = $pengukuranTerakhir ? $pengukuranTerakhir->stunting : null;
+
+        // Tambahkan variabel ini untuk sidebar
+        $unreadNotifications = $this->getUnreadNotifications($user->id_user);
 
         return view('orangtua.anak.detail', compact(
             'anak',
@@ -206,13 +175,140 @@ class OrangTuaController extends Controller
             'chartData',
             'whoStandards',
             'totalPengukuran',
-            'statusTerakhir'
+            'statusTerakhir',
+            'unreadNotifications'
         ));
     }
 
     /**
-     * Helper: Prepare chart data for Chart.js
+     * UC-OT-03: Notifikasi Index
      */
+    public function notifikasiIndex(Request $request)
+    {
+        $user = Auth::user();
+
+        $query = Notifikasi::where('id_user', $user->id_user);
+
+        if ($request->filled('status')) {
+            $query->where('status_baca', $request->status);
+        }
+
+        if ($request->filled('tipe')) {
+            $query->where('tipe_notifikasi', $request->tipe);
+        }
+
+        $query->orderBy('tanggal_kirim', 'desc');
+        $notifikasiList = $query->paginate(15)->withQueryString();
+
+        $totalNotifikasi = Notifikasi::where('id_user', $user->id_user)->count();
+        $belumDibaca = Notifikasi::where('id_user', $user->id_user)
+            ->where('status_baca', 'Belum Dibaca')
+            ->count();
+        $sudahDibaca = Notifikasi::where('id_user', $user->id_user)
+            ->where('status_baca', 'Sudah Dibaca')
+            ->count();
+        $peringatan = Notifikasi::where('id_user', $user->id_user)
+            ->where('tipe_notifikasi', 'Peringatan')
+            ->count();
+
+        // Map $belumDibaca ke $unreadNotifications untuk sidebar
+        $unreadNotifications = $belumDibaca;
+
+        return view('orangtua.notifikasi.index', compact(
+            'notifikasiList',
+            'totalNotifikasi',
+            'belumDibaca',
+            'sudahDibaca',
+            'peringatan',
+            'unreadNotifications'
+        ));
+    }
+
+    /**
+     * UC-OT-03: Notifikasi Show (Detail)
+     */
+    public function notifikasiShow($id)
+    {
+        $user = Auth::user();
+
+        $notifikasi = Notifikasi::where('id_notifikasi', $id)
+            ->where('id_user', $user->id_user)
+            ->with('stunting.pengukuran.anak')
+            ->firstOrFail();
+
+        if ($notifikasi->status_baca === 'Belum Dibaca') {
+            $notifikasi->update(['status_baca' => 'Sudah Dibaca']);
+        }
+
+        $anak = null;
+        if ($notifikasi->stunting && $notifikasi->stunting->pengukuran) {
+            $anak = $notifikasi->stunting->pengukuran->anak;
+        }
+
+        // Tambahkan variabel ini untuk sidebar
+        $unreadNotifications = $this->getUnreadNotifications($user->id_user);
+
+        return view('orangtua.notifikasi.show', compact('notifikasi', 'anak', 'unreadNotifications'));
+    }
+
+    /**
+     * UC-OT-04: Edukasi Index
+     */
+    public function edukasiIndex(Request $request)
+    {
+        $edukasiContent = $this->getEdukasiContent();
+
+        if ($request->filled('kategori')) {
+            $edukasiContent = collect($edukasiContent)->filter(function($item) use ($request) {
+                return $item['kategori'] === $request->kategori;
+            })->values()->all();
+        }
+
+        if ($request->filled('search')) {
+            $search = strtolower($request->search);
+            $edukasiContent = collect($edukasiContent)->filter(function($item) use ($search) {
+                return str_contains(strtolower($item['judul']), $search) ||
+                       str_contains(strtolower($item['ringkasan']), $search);
+            })->values()->all();
+        }
+
+        $categories = [
+            'Gizi Seimbang', 'ASI & MPASI', 'Tumbuh Kembang', 
+            'Pencegahan Stunting', 'Pola Asuh', 'Kesehatan Umum'
+        ];
+
+        // Tambahkan variabel ini untuk sidebar
+        $unreadNotifications = $this->getUnreadNotifications(Auth::id());
+
+        return view('orangtua.edukasi.index', compact('edukasiContent', 'categories', 'unreadNotifications'));
+    }
+
+    /**
+     * UC-OT-04: Edukasi Show (Detail)
+     */
+    public function edukasiShow($slug)
+    {
+        $edukasiContent = $this->getEdukasiContent();
+        $artikel = collect($edukasiContent)->firstWhere('slug', $slug);
+
+        if (!$artikel) {
+            abort(404, 'Artikel tidak ditemukan');
+        }
+
+        $relatedArticles = collect($edukasiContent)
+            ->where('kategori', $artikel['kategori'])
+            ->where('slug', '!=', $slug)
+            ->take(3)
+            ->all();
+
+        // Tambahkan variabel ini untuk sidebar
+        $unreadNotifications = $this->getUnreadNotifications(Auth::id());
+
+        return view('orangtua.edukasi.show', compact('artikel', 'relatedArticles', 'unreadNotifications'));
+    }
+
+    // --- Private Helper Methods ---
+
     private function prepareChartData($riwayatPengukuran, $anak)
     {
         $labels = [];
@@ -229,7 +325,6 @@ class OrangTuaController extends Controller
             $lingkarKepalaData[] = (float) $pengukuran->lingkar_kepala;
             $lingkarLenganData[] = (float) $pengukuran->lingkar_lengan;
 
-            // Status colors for point styling
             if ($pengukuran->stunting) {
                 $status = $pengukuran->stunting->status_stunting;
                 $statusColors[] = $status === 'Normal' ? '#10b981' : '#f59e0b';
@@ -248,14 +343,10 @@ class OrangTuaController extends Controller
         ];
     }
 
-    /**
-     * Helper: Get WHO standard ranges (simplified)
-     */
     private function getWHOStandards($jenisKelamin, $umurBulan)
     {
-        // Simplified WHO standards - in production, use complete WHO tables
         $standards = [
-            'L' => [ // Laki-laki
+            'L' => [
                 'bb_min' => 2.5 + ($umurBulan * 0.3),
                 'bb_median' => 3.5 + ($umurBulan * 0.4),
                 'bb_max' => 4.5 + ($umurBulan * 0.5),
@@ -263,7 +354,7 @@ class OrangTuaController extends Controller
                 'tb_median' => 50 + ($umurBulan * 1.4),
                 'tb_max' => 55 + ($umurBulan * 1.6),
             ],
-            'P' => [ // Perempuan
+            'P' => [
                 'bb_min' => 2.4 + ($umurBulan * 0.28),
                 'bb_median' => 3.3 + ($umurBulan * 0.38),
                 'bb_max' => 4.2 + ($umurBulan * 0.48),
@@ -272,220 +363,21 @@ class OrangTuaController extends Controller
                 'tb_max' => 54 + ($umurBulan * 1.5),
             ]
         ];
-
         return $standards[$jenisKelamin] ?? $standards['L'];
     }
 
-    /**
-     * API: Get chart data (AJAX endpoint for dynamic updates)
-     */
-    public function getChartData($id)
+    private function getEdukasiTipsData()
     {
-        $user = Auth::user();
-        $orangTua = OrangTua::where('id_user', $user->id_user)->first();
-
-        if (!$orangTua) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $anak = Anak::where('id_anak', $id)
-            ->where('id_orangtua', $orangTua->id_orangtua)
-            ->firstOrFail();
-
-        $riwayatPengukuran = DataPengukuran::where('id_anak', $anak->id_anak)
-            ->with('stunting')
-            ->orderBy('tanggal_ukur', 'asc')
-            ->get();
-
-        $chartData = $this->prepareChartData($riwayatPengukuran, $anak);
-
-        return response()->json($chartData);
-    }
-
-    /**
-     * UC-OT-03: Notifikasi Index
-     */
-    public function notifikasiIndex(Request $request)
-    {
-        $user = Auth::user();
-
-        // Build query
-        $query = Notifikasi::where('id_user', $user->id_user);
-
-        // Filter by status
-        if ($request->filled('status')) {
-            $query->where('status_baca', $request->status);
-        }
-
-        // Filter by type
-        if ($request->filled('tipe')) {
-            $query->where('tipe_notifikasi', $request->tipe);
-        }
-
-        // Order by date (newest first)
-        $query->orderBy('tanggal_kirim', 'desc');
-
-        // Paginate
-        $notifikasiList = $query->paginate(15)->withQueryString();
-
-        // Statistics
-        $totalNotifikasi = Notifikasi::where('id_user', $user->id_user)->count();
-        $belumDibaca = Notifikasi::where('id_user', $user->id_user)
-            ->where('status_baca', 'Belum Dibaca')
-            ->count();
-        $sudahDibaca = Notifikasi::where('id_user', $user->id_user)
-            ->where('status_baca', 'Sudah Dibaca')
-            ->count();
-
-        // Count by type
-        $peringatan = Notifikasi::where('id_user', $user->id_user)
-            ->where('tipe_notifikasi', 'Peringatan')
-            ->count();
-
-        return view('orangtua.notifikasi.index', compact(
-            'notifikasiList',
-            'totalNotifikasi',
-            'belumDibaca',
-            'sudahDibaca',
-            'peringatan'
-        ));
-    }
-
-    /**
-     * UC-OT-03: Notifikasi Show (Detail)
-     */
-    public function notifikasiShow($id)
-    {
-        $user = Auth::user();
-
-        $notifikasi = Notifikasi::where('id_notifikasi', $id)
-            ->where('id_user', $user->id_user)
-            ->with('stunting.pengukuran.anak')
-            ->firstOrFail();
-
-        // Mark as read automatically when opened
-        if ($notifikasi->status_baca === 'Belum Dibaca') {
-            $notifikasi->update(['status_baca' => 'Sudah Dibaca']);
-        }
-
-        // Get related anak if available
-        $anak = null;
-        if ($notifikasi->stunting && $notifikasi->stunting->pengukuran) {
-            $anak = $notifikasi->stunting->pengukuran->anak;
-        }
-
-        return view('orangtua.notifikasi.show', compact('notifikasi', 'anak'));
-    }
-
-    /**
-     * UC-OT-03: Mark Notification as Read (AJAX)
-     */
-    public function notifikasiMarkRead($id)
-    {
-        $user = Auth::user();
-
-        $notifikasi = Notifikasi::where('id_notifikasi', $id)
-            ->where('id_user', $user->id_user)
-            ->firstOrFail();
-
-        $notifikasi->update(['status_baca' => 'Sudah Dibaca']);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Notifikasi ditandai sebagai dibaca'
-        ]);
-    }
-
-    /**
-     * UC-OT-03: Mark All as Read
-     */
-    public function notifikasiMarkAllRead()
-    {
-        $user = Auth::user();
-
-        Notifikasi::where('id_user', $user->id_user)
-            ->where('status_baca', 'Belum Dibaca')
-            ->update(['status_baca' => 'Sudah Dibaca']);
-
-        return redirect()->back()->with('success', 'Semua notifikasi telah ditandai sebagai dibaca');
-    }
-
-    /**
-     * UC-OT-03: Delete Notification
-     */
-    public function notifikasiDelete($id)
-    {
-        $user = Auth::user();
-
-        $notifikasi = Notifikasi::where('id_notifikasi', $id)
-            ->where('id_user', $user->id_user)
-            ->firstOrFail();
-
-        $notifikasi->delete();
-
-        return redirect()->route('orangtua.notifikasi.index')
-            ->with('success', 'Notifikasi berhasil dihapus');
-    }
-
-    /**
-     * UC-OT-04: Edukasi Index
-     */
-    public function edukasiIndex(Request $request)
-    {
-        // Get all educational content
-        $edukasiContent = $this->getEdukasiContent();
-
-        // Filter by category
-        if ($request->filled('kategori')) {
-            $edukasiContent = collect($edukasiContent)->filter(function($item) use ($request) {
-                return $item['kategori'] === $request->kategori;
-            })->values()->all();
-        }
-
-        // Search by keyword
-        if ($request->filled('search')) {
-            $search = strtolower($request->search);
-            $edukasiContent = collect($edukasiContent)->filter(function($item) use ($search) {
-                return str_contains(strtolower($item['judul']), $search) ||
-                       str_contains(strtolower($item['ringkasan']), $search);
-            })->values()->all();
-        }
-
-        // Categories for filter
-        $categories = [
-            'Gizi Seimbang',
-            'ASI & MPASI',
-            'Tumbuh Kembang',
-            'Pencegahan Stunting',
-            'Pola Asuh',
-            'Kesehatan Umum'
+        $tips = [
+            ['icon' => '🥛', 'title' => 'ASI Eksklusif', 'description' => 'Berikan ASI eksklusif selama 6 bulan pertama.'],
+            ['icon' => '🍎', 'title' => 'MPASI 4 Bintang', 'description' => 'Karbohidrat, Protein Hewani, Nabati, Sayur.'],
+            ['icon' => '🏥', 'title' => 'Imunisasi', 'description' => 'Pastikan anak mendapat imunisasi lengkap.'],
+            ['icon' => '🧼', 'title' => 'Kebersihan', 'description' => 'Biasakan cuci tangan sebelum makan.'],
+            ['icon' => '📏', 'title' => 'Pantau Tumbuh', 'description' => 'Rutin ke Posyandu setiap bulan.'],
+            ['icon' => '💊', 'title' => 'Vitamin A', 'description' => 'Dapatkan kapsul Vitamin A di bulan Februari & Agustus.']
         ];
-
-        return view('orangtua.edukasi.index', compact('edukasiContent', 'categories'));
-    }
-
-    /**
-     * UC-OT-04: Edukasi Show (Detail)
-     */
-    public function edukasiShow($slug)
-    {
-        $edukasiContent = $this->getEdukasiContent();
-
-        // Find content by slug
-        $artikel = collect($edukasiContent)->firstWhere('slug', $slug);
-
-        if (!$artikel) {
-            abort(404, 'Artikel tidak ditemukan');
-        }
-
-        // Get related articles (same category, exclude current)
-        $relatedArticles = collect($edukasiContent)
-            ->where('kategori', $artikel['kategori'])
-            ->where('slug', '!=', $slug)
-            ->take(3)
-            ->all();
-
-        return view('orangtua.edukasi.show', compact('artikel', 'relatedArticles'));
+        shuffle($tips);
+        return array_slice($tips, 0, 3);
     }
 
     /**
@@ -726,6 +618,314 @@ class OrangTuaController extends Controller
                 'durasi_baca' => 5
             ],
         ];
+    }
+
+    // AJAX Actions
+    public function notifikasiMarkRead($id) {
+        Notifikasi::where('id_notifikasi', $id)->where('id_user', Auth::id())->update(['status_baca' => 'Sudah Dibaca']);
+        return response()->json(['success' => true]);
+    }
+
+    public function notifikasiMarkAllRead() {
+        Notifikasi::where('id_user', Auth::id())->where('status_baca', 'Belum Dibaca')->update(['status_baca' => 'Sudah Dibaca']);
+        return back()->with('success', 'Semua ditandai dibaca');
+    }
+
+    public function notifikasiDelete($id) {
+        Notifikasi::where('id_notifikasi', $id)->where('id_user', Auth::id())->delete();
+        return redirect()->route('orangtua.notifikasi.index')->with('success', 'Dihapus');
+    }
+
+    /**
+     * UC-OT-05.1: Profile Page
+     */
+    public function profile()
+    {
+        $userId = Auth::id();
+        $user = User::with('orangTua')->findOrFail($userId);
+        $orangTua = $user->orangTua;
+        
+        if (!$orangTua) {
+            return redirect()->route('orangtua.dashboard')
+                ->with('error', 'Data orang tua tidak ditemukan');
+        }
+        
+        // Get children count
+        $jumlahAnak = Anak::where('id_orangtua', $orangTua->id_orangtua)->count();
+        
+        // Get total pengukuran for all children
+        $totalPengukuran = DataPengukuran::whereHas('anak', function($query) use ($orangTua) {
+            $query->where('id_orangtua', $orangTua->id_orangtua);
+        })->count();
+        
+        // Get account age
+        $accountAge = \Carbon\Carbon::parse($user->created_at)->diffForHumans();
+        
+        // Get last activity
+        $lastActivity = DataPengukuran::whereHas('anak', function($query) use ($orangTua) {
+            $query->where('id_orangtua', $orangTua->id_orangtua);
+        })->latest('created_at')->first();
+        
+        $stats = [
+            'jumlah_anak' => $jumlahAnak,
+            'total_pengukuran' => $totalPengukuran,
+            'account_age' => $accountAge,
+            'last_activity' => $lastActivity,
+        ];
+        
+        return view('orangtua.profile.index', compact('user', 'orangTua', 'stats'));
+    }
+
+    /**
+     * UC-OT-05.2: Update Profile
+     */
+    public function profileUpdate(Request $request)
+    {
+        $request->validate([
+            'nama' => 'required|string|max:100',
+            'email' => 'required|email|max:100|unique:User,email,' . Auth::id() . ',id_user',
+            'no_telepon' => 'nullable|string|max:15',
+            'nama_ayah' => 'required|string|max:100',
+            'nama_ibu' => 'required|string|max:100',
+            'nik' => 'required|string|size:16|unique:Orang_Tua,nik,' . Auth::user()->orangTua->id_orangtua . ',id_orangtua',
+            'alamat' => 'required|string',
+            'pekerjaan' => 'nullable|string|max:50',
+        ], [
+            'nama.required' => 'Nama harus diisi',
+            'email.required' => 'Email harus diisi',
+            'email.email' => 'Format email tidak valid',
+            'email.unique' => 'Email sudah digunakan',
+            'nama_ayah.required' => 'Nama ayah harus diisi',
+            'nama_ibu.required' => 'Nama ibu harus diisi',
+            'nik.required' => 'NIK harus diisi',
+            'nik.size' => 'NIK harus 16 digit',
+            'nik.unique' => 'NIK sudah terdaftar',
+            'alamat.required' => 'Alamat harus diisi',
+        ]);
+        
+        try {
+            \DB::beginTransaction();
+            
+            // Update User table
+            $user = User::findOrFail(Auth::id());
+            $user->nama = $request->nama;
+            $user->email = $request->email;
+            $user->no_telepon = $request->no_telepon;
+            $user->updated_at = now();
+            $user->save();
+            
+            // Update OrangTua table
+            $orangTua = OrangTua::where('id_user', Auth::id())->firstOrFail();
+            $orangTua->nama_ayah = $request->nama_ayah;
+            $orangTua->nama_ibu = $request->nama_ibu;
+            $orangTua->nik = $request->nik;
+            $orangTua->alamat = $request->alamat;
+            $orangTua->pekerjaan = $request->pekerjaan;
+            $orangTua->save();
+            
+            \DB::commit();
+            
+            return redirect()->back()->with('success', 'Profil berhasil diperbarui');
+            
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            return redirect()->back()
+                ->with('error', 'Gagal memperbarui profil: ' . $e->getMessage())
+                ->withInput();
+        }
+    }
+
+    /**
+     * UC-OT-05.3: Change Password
+     */
+    public function changePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required',
+            'password' => 'required|min:8|confirmed',
+        ], [
+            'current_password.required' => 'Password lama harus diisi',
+            'password.required' => 'Password baru harus diisi',
+            'password.min' => 'Password minimal 8 karakter',
+            'password.confirmed' => 'Konfirmasi password tidak cocok',
+        ]);
+        
+        $user = User::findOrFail(Auth::id());
+        
+        // Check current password
+        if (!Hash::check($request->current_password, $user->password)) {
+            return redirect()->back()
+                ->with('error', 'Password lama tidak sesuai')
+                ->withInput();
+        }
+        
+        // Update password
+        $user->password = Hash::make($request->password);
+        $user->updated_at = now();
+        $user->save();
+        
+        return redirect()->back()->with('success', 'Password berhasil diubah');
+    }
+
+    /**
+     * UC-OT-05.4: Settings Page
+     */
+    public function settings()
+    {
+        $userId = Auth::id();
+        $user = User::with('orangTua')->findOrFail($userId);
+        
+        // Get current settings from session
+        $settings = [
+            'notifikasi_email' => session('settings.notifikasi_email', true),
+            'notifikasi_whatsapp' => session('settings.notifikasi_whatsapp', true),
+            'notifikasi_browser' => session('settings.notifikasi_browser', true),
+            'notifikasi_sound' => session('settings.notifikasi_sound', true),
+            'pengingat_posyandu' => session('settings.pengingat_posyandu', true),
+            'pengingat_imunisasi' => session('settings.pengingat_imunisasi', true),
+            'privasi_data' => session('settings.privasi_data', 'private'),
+            'bahasa' => session('settings.bahasa', 'id'),
+            'tema' => session('settings.tema', 'light'),
+        ];
+        
+        return view('orangtua.settings.index', compact('user', 'settings'));
+    }
+
+    /**
+     * UC-OT-05.5: Update Settings
+     */
+    public function settingsUpdate(Request $request)
+    {
+        $request->validate([
+            'notifikasi_email' => 'boolean',
+            'notifikasi_whatsapp' => 'boolean',
+            'notifikasi_browser' => 'boolean',
+            'notifikasi_sound' => 'boolean',
+            'pengingat_posyandu' => 'boolean',
+            'pengingat_imunisasi' => 'boolean',
+            'privasi_data' => 'in:public,private',
+            'bahasa' => 'in:id,en',
+            'tema' => 'in:light,dark',
+        ]);
+        
+        // Store settings in session
+        session([
+            'settings.notifikasi_email' => $request->boolean('notifikasi_email'),
+            'settings.notifikasi_whatsapp' => $request->boolean('notifikasi_whatsapp'),
+            'settings.notifikasi_browser' => $request->boolean('notifikasi_browser'),
+            'settings.notifikasi_sound' => $request->boolean('notifikasi_sound'),
+            'settings.pengingat_posyandu' => $request->boolean('pengingat_posyandu'),
+            'settings.pengingat_imunisasi' => $request->boolean('pengingat_imunisasi'),
+            'settings.privasi_data' => $request->privasi_data ?? 'private',
+            'settings.bahasa' => $request->bahasa ?? 'id',
+            'settings.tema' => $request->tema ?? 'light',
+        ]);
+        
+        return redirect()->back()->with('success', 'Pengaturan berhasil disimpan');
+    }
+
+    /**
+     * UC-OT-05.6: Delete Account Request
+     */
+    public function deleteAccountRequest(Request $request)
+    {
+        $request->validate([
+            'password' => 'required',
+            'alasan' => 'required|string|max:500',
+        ], [
+            'password.required' => 'Password harus diisi untuk konfirmasi',
+            'alasan.required' => 'Alasan penghapusan akun harus diisi',
+        ]);
+        
+        $user = User::findOrFail(Auth::id());
+        
+        // Verify password
+        if (!Hash::check($request->password, $user->password)) {
+            return redirect()->back()
+                ->with('error', 'Password tidak sesuai')
+                ->withInput();
+        }
+        
+        // In production, you might want to:
+        // 1. Mark account for deletion (soft delete)
+        // 2. Send notification to admin
+        // 3. Keep data for 30 days before permanent deletion
+        
+        // For now, we'll just send a notification
+        \Log::info('Account deletion request', [
+            'user_id' => $user->id_user,
+            'username' => $user->username,
+            'alasan' => $request->alasan,
+            'timestamp' => now(),
+        ]);
+        
+        return redirect()->back()
+            ->with('warning', 'Permintaan penghapusan akun telah diterima. Tim kami akan menghubungi Anda dalam 1x24 jam.');
+    }
+
+    /**
+     * UC-OT-05.7: Export Personal Data
+     */
+    public function exportData()
+    {
+        $userId = Auth::id();
+        $user = User::with('orangTua')->findOrFail($userId);
+        $orangTua = $user->orangTua;
+        
+        // Get all children and their data
+        $anak = Anak::with(['dataPengukuran.stunting'])
+            ->where('id_orangtua', $orangTua->id_orangtua)
+            ->get();
+        
+        // Prepare data array
+        $exportData = [
+            'user_info' => [
+                'username' => $user->username,
+                'nama' => $user->nama,
+                'email' => $user->email,
+                'no_telepon' => $user->no_telepon,
+                'created_at' => $user->created_at,
+            ],
+            'orangtua_info' => [
+                'nama_ayah' => $orangTua->nama_ayah,
+                'nama_ibu' => $orangTua->nama_ibu,
+                'nik' => $orangTua->nik,
+                'alamat' => $orangTua->alamat,
+                'pekerjaan' => $orangTua->pekerjaan,
+            ],
+            'children' => [],
+        ];
+        
+        foreach ($anak as $child) {
+            $childData = [
+                'nik_anak' => $child->nik_anak,
+                'nama_anak' => $child->nama_anak,
+                'tanggal_lahir' => $child->tanggal_lahir,
+                'jenis_kelamin' => $child->jenis_kelamin,
+                'measurements' => [],
+            ];
+            
+            foreach ($child->dataPengukuran as $pengukuran) {
+                $childData['measurements'][] = [
+                    'tanggal_ukur' => $pengukuran->tanggal_ukur,
+                    'umur_bulan' => $pengukuran->umur_bulan,
+                    'berat_badan' => $pengukuran->berat_badan,
+                    'tinggi_badan' => $pengukuran->tinggi_badan,
+                    'lingkar_kepala' => $pengukuran->lingkar_kepala,
+                    'status_gizi' => $pengukuran->stunting->status_stunting ?? null,
+                    'z_score_tb_u' => $pengukuran->stunting->z_score_tb_u ?? null,
+                ];
+            }
+            
+            $exportData['children'][] = $childData;
+        }
+        
+        // Generate JSON file
+        $filename = 'Data_Pribadi_' . $user->username . '_' . now()->format('YmdHis') . '.json';
+        
+        return response()->json($exportData)
+            ->header('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->header('Content-Type', 'application/json');
     }
 
 }

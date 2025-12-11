@@ -2,18 +2,13 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Posyandu extends Model
 {
-    use HasFactory;
-
     protected $table = 'posyandu';
     protected $primaryKey = 'id_posyandu';
-    public $timestamps = true;
-    const CREATED_AT = 'created_at';
-    const UPDATED_AT = null;
+    public $timestamps = false;
 
     protected $fillable = [
         'nama_posyandu',
@@ -21,34 +16,23 @@ class Posyandu extends Model
         'alamat',
         'kelurahan',
         'kecamatan',
-        'status'
+        'status',
+        'created_at'
     ];
 
-    protected $casts = [
-        'created_at' => 'datetime'
-    ];
-
-    /**
-     * Relasi ke Puskesmas
-     */
+    // Relationships
     public function puskesmas()
     {
         return $this->belongsTo(Puskesmas::class, 'id_puskesmas', 'id_puskesmas');
     }
 
-    /**
-     * Relasi ke Data Pengukuran
-     */
-    public function dataPengukuran()
+    public function user()
     {
-        return $this->hasMany(DataPengukuran::class, 'id_posyandu', 'id_posyandu');
+        return $this->belongsTo(User::class, 'id_user', 'id_user');
     }
 
-    /**
-     * Scope untuk filter status aktif
-     */
-    public function scopeAktif($query)
+    public function anak()
     {
-        return $query->where('status', 'Aktif');
+        return $this->hasMany(Anak::class, 'id_posyandu', 'id_posyandu');
     }
 }

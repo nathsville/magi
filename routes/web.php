@@ -84,17 +84,51 @@ Route::middleware('auth')->group(function () {
     
     // Petugas Posyandu Routes
     Route::prefix('posyandu')->name('posyandu.')->middleware('role:Petugas Posyandu')->group(function () {
+        // Dashboard
         Route::get('/dashboard', [PosyanduController::class, 'dashboard'])->name('dashboard');
+        Route::get('/dashboard/stats', [PosyanduController::class, 'dashboardStats'])->name('dashboard.stats');
         
-        // Input Data Pengukuran
-        Route::get('/input-data', [PosyanduController::class, 'inputData'])->name('input-data');
-        Route::post('/input-data', [PosyanduController::class, 'storeData'])->name('input-data.store');
+        // UC-PSY-02: Input Pengukuran
+        Route::prefix('pengukuran')->name('pengukuran.')->group(function () {
+            Route::get('/form', [PosyanduController::class, 'inputPengukuranForm'])->name('form');
+            Route::post('/store', [PosyanduController::class, 'inputPengukuranStore'])->name('store');
+            
+            // UC-PSY-04: Riwayat Pengukuran
+            Route::get('/riwayat', [PosyanduController::class, 'riwayatPengukuran'])->name('riwayat');
+            Route::get('/riwayat/{id}', [PosyanduController::class, 'riwayatPengukuranDetail'])->name('detail');
+            Route::get('/riwayat/export', [PosyanduController::class, 'riwayatExport'])->name('riwayat.export');
+        });
         
-        // Data Anak
-        Route::get('/data-anak', [PosyanduController::class, 'dataAnak'])->name('data-anak');
+        // UC-PSY-03: Manajemen Data Anak
+        Route::prefix('anak')->name('anak.')->group(function () {
+            Route::get('/', [PosyanduController::class, 'dataAnakIndex'])->name('index');
+            Route::get('/create', [PosyanduController::class, 'dataAnakCreate'])->name('create');
+            Route::post('/store', [PosyanduController::class, 'dataAnakStore'])->name('store');
+            Route::get('/{id}', [PosyanduController::class, 'dataAnakShow'])->name('show');
+            Route::get('/{id}/edit', [PosyanduController::class, 'dataAnakEdit'])->name('edit');
+            Route::put('/{id}', [PosyanduController::class, 'dataAnakUpdate'])->name('update');
+        });
         
-        // Monitoring
-        Route::get('/monitoring', [PosyanduController::class, 'monitoring'])->name('monitoring');
+        // UC-PSY-05: Notifikasi Management
+        Route::prefix('notifikasi')->name('notifikasi.')->group(function () {
+            Route::get('/', [PosyanduController::class, 'notifikasiIndex'])->name('index');
+            Route::post('/{id}/mark-as-read', [PosyanduController::class, 'notifikasiMarkAsRead'])->name('mark-as-read');
+            Route::post('/mark-all-as-read', [PosyanduController::class, 'notifikasiMarkAllAsRead'])->name('mark-all-as-read');
+            Route::delete('/{id}', [PosyanduController::class, 'notifikasiDelete'])->name('delete');
+            Route::delete('/delete-all-read', [PosyanduController::class, 'notifikasiDeleteAllRead'])->name('delete-all-read');
+        });
+        
+        // UC-PSY-06: Laporan Posyandu
+        Route::prefix('laporan')->name('laporan.')->group(function () {
+            Route::get('/', [PosyanduController::class, 'laporanIndex'])->name('index');
+            Route::post('/generate', [PosyanduController::class, 'laporanGenerate'])->name('generate');
+        });
+        
+        // Profile & Settings
+        Route::get('/profile', [PosyanduController::class, 'profile'])->name('profile');
+        Route::put('/profile/update', [PosyanduController::class, 'profileUpdate'])->name('profile.update');
+        Route::get('/settings', [PosyanduController::class, 'settings'])->name('settings');
+        Route::put('/settings/update', [PosyanduController::class, 'settingsUpdate'])->name('settings.update');
     });
     
     // Petugas Puskesmas Routes
@@ -140,18 +174,37 @@ Route::middleware('auth')->group(function () {
     
     // Petugas DPPKB Routes
     Route::prefix('dppkb')->name('dppkb.')->middleware('role:Petugas DPPKB')->group(function () {
-        Route::get('/dashboard', [DPPKBController::class, 'dashboard'])->name('dashboard');
+         // Dashboard
+        Route::get('/dashboard', [DppkbController::class, 'dashboard'])->name('dashboard');
         
-        // Validasi Data
-        Route::get('/validasi', [DPPKBController::class, 'validasi'])->name('validasi');
-        Route::get('/validasi/{id}', [DPPKBController::class, 'validasiDetail'])->name('validasi.detail');
-        Route::post('/validasi/{id}', [DPPKBController::class, 'validasiStore'])->name('validasi.store');
+        // Monitoring Kota
+        Route::get('/monitoring', [DppkbController::class, 'monitoring'])->name('monitoring');
+        Route::get('/monitoring/data', [DppkbController::class, 'monitoringData'])->name('monitoring.data');
+        Route::get('/monitoring/wilayah/{kecamatan}', [DppkbController::class, 'monitoringWilayah'])->name('monitoring.wilayah');
         
-        // Monitoring
-        Route::get('/monitoring', [DPPKBController::class, 'monitoring'])->name('monitoring');
+        // Validasi Final
+        Route::get('/validasi', [DppkbController::class, 'validasi'])->name('validasi');
+        Route::get('/validasi/data', [DppkbController::class, 'validasiData'])->name('validasi.data');
+        Route::post('/validasi/{id}/approve', [DppkbController::class, 'approveValidasi'])->name('validasi.approve');
+        Route::post('/validasi/{id}/klarifikasi', [DppkbController::class, 'mintaKlarifikasi'])->name('validasi.klarifikasi');
+        Route::get('/validasi/{id}/detail', [DppkbController::class, 'validasiDetail'])->name('validasi.detail');
         
-        // Laporan
-        Route::get('/laporan', [DPPKBController::class, 'laporan'])->name('laporan');
+        // Laporan Daerah
+        Route::get('/laporan', [DppkbController::class, 'laporan'])->name('laporan');
+        Route::post('/laporan/generate', [DppkbController::class, 'generateLaporan'])->name('laporan.generate');
+        Route::get('/laporan/{id}/download', [DppkbController::class, 'downloadLaporan'])->name('laporan.download');
+        Route::get('/laporan/{id}/preview', [DppkbController::class, 'previewLaporan'])->name('laporan.preview');
+        
+        // Statistik & Analytics
+        Route::get('/statistik', [DppkbController::class, 'statistik'])->name('statistik');
+        Route::get('/statistik/tren', [DppkbController::class, 'statistikTren'])->name('statistik.tren');
+        Route::get('/statistik/komparasi', [DppkbController::class, 'statistikKomparasi'])->name('statistik.komparasi');
+        Route::get('/statistik/export', [DppkbController::class, 'exportStatistik'])->name('statistik.export');
+        
+        // Notifikasi
+        Route::get('/notifikasi', [DppkbController::class, 'notifikasi'])->name('notifikasi');
+        Route::post('/notifikasi/{id}/read', [DppkbController::class, 'markAsRead'])->name('notifikasi.read');
+        Route::post('/notifikasi/read-all', [DppkbController::class, 'markAllAsRead'])->name('notifikasi.read-all');
     });
     
     // Orang Tua Routes
@@ -183,8 +236,17 @@ Route::middleware('auth')->group(function () {
         Route::get('/{slug}', [OrangTuaController::class, 'edukasiShow'])->name('show');
     });
     
-    // Profile
+    // UC-OT-05: Profile & Settings
     Route::get('/profile', [OrangTuaController::class, 'profile'])->name('profile');
-    Route::put('/profile', [OrangTuaController::class, 'profileUpdate'])->name('profile.update');
+    Route::put('/profile/update', [OrangTuaController::class, 'profileUpdate'])->name('profile.update');
+    Route::post('/profile/change-password', [OrangTuaController::class, 'changePassword'])->name('profile.change-password');
+    
+    Route::get('/settings', [OrangTuaController::class, 'settings'])->name('settings');
+    Route::put('/settings/update', [OrangTuaController::class, 'settingsUpdate'])->name('settings.update');
+    
+    Route::post('/account/delete-request', [OrangTuaController::class, 'deleteAccountRequest'])->name('account.delete-request');
+    Route::get('/data/export', [OrangTuaController::class, 'exportData'])->name('data.export');
     });
+
+    
 });

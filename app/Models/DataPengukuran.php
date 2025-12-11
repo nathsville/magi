@@ -12,7 +12,9 @@ class DataPengukuran extends Model
 
     protected $table = 'data_pengukuran';
     protected $primaryKey = 'id_pengukuran';
-    public $timestamps = false;
+    
+    // Saya ubah ke true agar created_at terisi otomatis (penting untuk grafik/logs)
+    public $timestamps = true; 
 
     protected $fillable = [
         'id_anak',
@@ -24,6 +26,7 @@ class DataPengukuran extends Model
         'tinggi_badan',
         'lingkar_kepala',
         'lingkar_lengan',
+        'cara_ukur',    // Saya tambahkan ini karena ada di Controller Anda
         'status_gizi',
         'catatan',
     ];
@@ -54,7 +57,11 @@ class DataPengukuran extends Model
         return $this->belongsTo(User::class, 'id_petugas', 'id_user');
     }
 
-    public function dataStunting()
+    /**
+     * PERBAIKAN: Mengubah nama dari 'dataStunting' menjadi 'stunting'
+     * Agar sesuai dengan panggilan with('stunting') di Controller
+     */
+    public function stunting()
     {
         return $this->hasOne(DataStunting::class, 'id_pengukuran', 'id_pengukuran');
     }
@@ -62,8 +69,11 @@ class DataPengukuran extends Model
     // Helper methods
     public function hitungUmurBulan()
     {
-        $tanggalLahir = $this->anak->tanggal_lahir;
-        return Carbon::parse($tanggalLahir)->diffInMonths($this->tanggal_ukur);
+        if ($this->anak) {
+            $tanggalLahir = $this->anak->tanggal_lahir;
+            return Carbon::parse($tanggalLahir)->diffInMonths($this->tanggal_ukur);
+        }
+        return 0;
     }
 
     public function isOutlier()

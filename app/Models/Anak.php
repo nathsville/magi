@@ -12,6 +12,7 @@ class Anak extends Model
 
     protected $fillable = [
         'id_orangtua',
+        'id_posyandu', // Tambahan: Penting agar tidak error Mass Assignment saat create anak
         'nama_anak',
         'nik_anak',
         'tanggal_lahir',
@@ -37,7 +38,12 @@ class Anak extends Model
         return $this->belongsTo(Posyandu::class, 'id_posyandu', 'id_posyandu');
     }
 
-    public function pengukuran()
+    /**
+     * PERBAIKAN DI SINI:
+     * Mengubah nama dari 'pengukuran' menjadi 'dataPengukuran'
+     * agar sesuai dengan panggilan di Seeder (IntervensiStuntingSeeder)
+     */
+    public function dataPengukuran()
     {
         return $this->hasMany(DataPengukuran::class, 'id_anak', 'id_anak');
     }

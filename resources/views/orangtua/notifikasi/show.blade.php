@@ -2,40 +2,44 @@
 
 @section('title', 'Detail Notifikasi')
 
+@section('sidebar')
+    @include('orangtua.sidebar.sidebar-menu')
+@endsection
+
 @section('content')
-<div class="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
-    {{-- Header --}}
-    @include('orangtua.partials.header')
-
-    <div class="container mx-auto px-4 py-6 max-w-4xl">
-        {{-- Back Button --}}
-        <div class="mb-4">
-            <a href="{{ route('orangtua.notifikasi.index') }}" 
-               class="inline-flex items-center text-purple-600 hover:text-purple-700 font-medium">
-                <i class="fas fa-arrow-left mr-2"></i>Kembali ke Notifikasi
-            </a>
-        </div>
-
-        {{-- Notification Card --}}
-        <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
-            {{-- Header --}}
-            @include('orangtua.notifikasi.partials.detail-header', ['notifikasi' => $notifikasi])
-
-            {{-- Content --}}
-            @include('orangtua.notifikasi.partials.detail-content', ['notifikasi' => $notifikasi])
-
-            {{-- Related Anak Info (if available) --}}
-            @if($anak)
-                @include('orangtua.notifikasi.partials.detail-anak-info', ['anak' => $anak])
-            @endif
-
-            {{-- Actions --}}
-            @include('orangtua.notifikasi.partials.detail-actions', ['notifikasi' => $notifikasi, 'anak' => $anak])
-        </div>
-
-        {{-- Related Notifications --}}
-        @include('orangtua.notifikasi.partials.related-notifications', ['notifikasi' => $notifikasi])
+<div class="max-w-4xl mx-auto space-y-6">
+    {{-- Back Button --}}
+    <div class="flex items-center justify-between">
+        <a href="{{ route('orangtua.notifikasi.index') }}" 
+           class="flex items-center text-gray-600 hover:text-[#000878] transition font-medium text-sm group">
+            <div class="w-8 h-8 bg-white border border-gray-300 rounded-full flex items-center justify-center mr-3 group-hover:border-[#000878] transition">
+                <svg class="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+            </div>
+            Kembali ke Daftar
+        </a>
     </div>
+
+    {{-- Notification Card --}}
+    <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+        {{-- Header --}}
+        @include('orangtua.notifikasi.partials.show.header', ['notifikasi' => $notifikasi])
+
+        {{-- Content --}}
+        @include('orangtua.notifikasi.partials.show.content', ['notifikasi' => $notifikasi])
+
+        {{-- Related Anak Info (if available) --}}
+        @if($anak)
+            @include('orangtua.notifikasi.partials.show.anak-info', ['anak' => $anak])
+        @endif
+
+        {{-- Actions --}}
+        @include('orangtua.notifikasi.partials.show.actions', ['notifikasi' => $notifikasi, 'anak' => $anak])
+    </div>
+
+    {{-- Related Notifications --}}
+    @include('orangtua.notifikasi.partials.show.related', ['notifikasi' => $notifikasi])
 </div>
 @endsection
 

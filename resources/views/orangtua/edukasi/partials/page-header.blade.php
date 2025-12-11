@@ -1,15 +1,13 @@
-<div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
-    <div class="flex items-center justify-between">
-        <div>
-            <h1 class="text-3xl font-bold text-gray-800 mb-2">
-                <i class="fas fa-book-open text-purple-600 mr-3"></i>Edukasi Gizi & Kesehatan
-            </h1>
-            <p class="text-gray-600">Pelajari cara mencegah stunting dan mendukung tumbuh kembang optimal anak</p>
+<div class="flex items-center justify-between">
+    <div class="flex items-center space-x-4">
+        <div class="w-12 h-12 bg-[#000878] rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+            </svg>
         </div>
-        <div class="hidden md:block">
-            <div class="w-20 h-20 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-white text-4xl shadow-lg">
-                📚
-            </div>
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">Edukasi Gizi & Kesehatan</h1>
+            <p class="text-sm text-gray-600 mt-1">Artikel dan panduan pencegahan stunting</p>
         </div>
     </div>
 </div>
