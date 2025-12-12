@@ -87,7 +87,7 @@ function updateHeaderTime() {
 // ============================================================================
 async function loadValidasiData(page = 1) {
     currentPage = page;
-    showLoading();
+    showLoading(); // Menampilkan loader
     
     try {
         const params = new URLSearchParams({
@@ -98,25 +98,28 @@ async function loadValidasiData(page = 1) {
         });
         
         const response = await fetch(`{{ route('dppkb.validasi.data') }}?${params}`, {
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json'
-            }
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
         });
         
         if (!response.ok) throw new Error('Network response was not ok');
         
-        const data = await response.json();
+        const jsonResponse = await response.json();
         
-        renderTable(data.data);
-        renderPagination(data);
-        updateStats(data.stats);
-        updateShowingCount(data.total);
+        // PENTING: Menggunakan data yang sudah ditransformasi
+        renderTable(jsonResponse.data.data); 
+        renderPagination(jsonResponse.data);
+        updateStats(jsonResponse.stats);
+        updateShowingCount(jsonResponse.total);
         
+        // Jika Anda menggunakan Swal loading, tutup disini
+        if (typeof Swal !== 'undefined') { Swal.close(); }
+
     } catch (error) {
-        console.error('Error loading data:', error);
-        showErrorToast('Gagal memuat data. Silakan refresh halaman.');
-        showErrorState();
+        console.error('Error:', error);
+        // Pastikan loader tertutup meskipun error
+        if (typeof Swal !== 'undefined') { Swal.close(); } 
+        showErrorState(); 
+        showErrorToast('Gagal memuat data. Silakan coba lagi.');
     }
 }
 
@@ -156,129 +159,66 @@ function renderTable(data) {
     const container = document.getElementById('validasiTableContainer');
     
     if (!data || data.length === 0) {
-        container.innerHTML = `
-            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-                <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                </svg>
-                <p class="text-gray-600 text-lg font-medium mb-2">Tidak Ada Data</p>
-                <p class="text-gray-500 text-sm">Tidak ada data yang sesuai dengan filter Anda</p>
-            </div>
-        `;
+        container.innerHTML = `<div class="p-8 text-center text-gray-500">Tidak ada data ditemukan</div>`;
         return;
     }
     
+    // Header Tabel
     let tableHTML = `
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="w-full">
                     <thead>
-                        <tr class="bg-gradient-to-r from-purple-600 to-purple-800 text-white">
-                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">No</th>
-                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Data Anak</th>
-                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Orang Tua</th>
-                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Lokasi</th>
-                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Status Gizi</th>
-                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Validator Puskesmas</th>
-                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider">Status</th>
-                            <th class="px-6 py-4 text-center text-xs font-semibold uppercase tracking-wider">Aksi</th>
+                        <tr class="bg-purple-700 text-white">
+                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase">No</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase">Data Anak</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase">Orang Tua</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase">Lokasi</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase">Status Gizi</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold uppercase">Status</th>
+                            <th class="px-6 py-4 text-center text-xs font-semibold uppercase">Aksi</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200">
     `;
     
+    // Looping Data
     data.forEach((item, index) => {
         const rowNumber = (currentPage - 1) * 20 + index + 1;
         const statusBadge = getStatusBadge(item.status_stunting);
         const validasiBadge = getValidasiBadge(item.status_validasi);
         
+        // Menggunakan field datar dari Controller (nama_anak, bukan anak.nama_anak)
         tableHTML += `
-            <tr class="hover:bg-gray-50 transition">
-                <td class="px-6 py-4 text-sm text-gray-900 font-medium">${rowNumber}</td>
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 text-sm font-medium text-gray-900">${rowNumber}</td>
                 <td class="px-6 py-4">
-                    <div class="flex items-center space-x-3">
-                        <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                    d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="text-sm font-semibold text-gray-900">${item.anak.nama_anak}</p>
-                            <p class="text-xs text-gray-500">${item.anak.nik_anak}</p>
-                            <p class="text-xs text-gray-500">${item.umur_bulan} bulan • ${item.anak.jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan'}</p>
-                        </div>
-                    </div>
+                    <p class="text-sm font-bold text-gray-900">${item.nama_anak}</p>
+                    <p class="text-xs text-gray-500">NIK: ${item.nik_anak}</p>
+                    <p class="text-xs text-gray-500">${item.umur_bulan} bln • ${item.jenis_kelamin}</p>
                 </td>
                 <td class="px-6 py-4">
-                    <p class="text-sm text-gray-900">${item.anak.orang_tua.nama_ibu || '-'}</p>
-                    <p class="text-xs text-gray-500">${item.anak.orang_tua.telepon || '-'}</p>
+                    <p class="text-sm text-gray-900">${item.nama_ibu}</p>
+                    <p class="text-xs text-gray-500">${item.telepon_ortu}</p>
                 </td>
                 <td class="px-6 py-4">
-                    <p class="text-sm text-gray-900">${item.anak.posyandu.nama_posyandu}</p>
-                    <p class="text-xs text-gray-500">${item.anak.posyandu.puskesmas.nama_puskesmas}</p>
-                    <p class="text-xs text-purple-600 font-medium">${item.anak.posyandu.puskesmas.kecamatan}</p>
+                    <p class="text-sm font-medium text-gray-900">${item.nama_posyandu}</p>
+                    <p class="text-xs text-gray-500">${item.nama_puskesmas}</p>
+                    <p class="text-xs text-purple-600 font-bold">${item.kecamatan}</p>
                 </td>
                 <td class="px-6 py-4">
-                    <div class="space-y-1">
-                        ${statusBadge}
-                        <div class="text-xs text-gray-600">
-                            <span class="font-medium">TB/U:</span> ${item.z_score_tb_u}
-                        </div>
-                    </div>
-                </td>
-                <td class="px-6 py-4">
-                    <p class="text-sm text-gray-900">${item.validator?.nama || '-'}</p>
-                    <p class="text-xs text-gray-500">${item.tanggal_validasi ? formatDate(item.tanggal_validasi) : '-'}</p>
+                    ${statusBadge}
+                    <div class="text-xs text-gray-500 mt-1">TB/U: ${item.z_score_tb_u}</div>
                 </td>
                 <td class="px-6 py-4">${validasiBadge}</td>
-                <td class="px-6 py-4">
-                    <div class="flex items-center justify-center space-x-2">
-                        <button onclick="showDetail(${item.id_stunting})" 
-                            class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                            title="Lihat Detail">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
-                            </svg>
-                        </button>
-                        ${item.status_validasi === 'Validated' ? `
-                            <button onclick="showApproveModal(${item.id_stunting})" 
-                                class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition"
-                                title="Setujui">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                            </button>
-                            <button onclick="showKlarifikasiModal(${item.id_stunting})" 
-                                class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition"
-                                title="Minta Klarifikasi">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                                </svg>
-                            </button>
-                        ` : ''}
-                    </div>
+                <td class="px-6 py-4 text-center">
+                    <button onclick="showDetail(${item.id_stunting})" class="text-blue-600 hover:text-blue-800 font-medium text-sm">Detail</button>
                 </td>
             </tr>
         `;
     });
     
-    tableHTML += `
-                    </tbody>
-                </table>
-            </div>
-            <div class="px-6 py-4 bg-gray-50 border-t border-gray-200" id="paginationContainer">
-                <!-- Pagination will be inserted here -->
-            </div>
-        </div>
-    `;
-    
+    tableHTML += `</tbody></table></div></div>`;
     container.innerHTML = tableHTML;
 }
 

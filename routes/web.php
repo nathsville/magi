@@ -174,37 +174,48 @@ Route::middleware('auth')->group(function () {
     
     // Petugas DPPKB Routes
     Route::prefix('dppkb')->name('dppkb.')->middleware('role:Petugas DPPKB')->group(function () {
-         // Dashboard
-        Route::get('/dashboard', [DppkbController::class, 'dashboard'])->name('dashboard');
+       // Dashboard
+        Route::get('/dashboard', [DPPKBController::class, 'dashboard'])->name('dashboard');
         
         // Monitoring Kota
-        Route::get('/monitoring', [DppkbController::class, 'monitoring'])->name('monitoring');
-        Route::get('/monitoring/data', [DppkbController::class, 'monitoringData'])->name('monitoring.data');
-        Route::get('/monitoring/wilayah/{kecamatan}', [DppkbController::class, 'monitoringWilayah'])->name('monitoring.wilayah');
+        Route::get('/monitoring', [DPPKBController::class, 'monitoring'])->name('monitoring');
+        Route::get('/monitoring/data', [DPPKBController::class, 'monitoringData'])->name('monitoring.data');
+        Route::get('/monitoring/wilayah/{kecamatan}', [DPPKBController::class, 'monitoringWilayah'])->name('monitoring.wilayah');
         
         // Validasi Final
-        Route::get('/validasi', [DppkbController::class, 'validasi'])->name('validasi');
-        Route::get('/validasi/data', [DppkbController::class, 'validasiData'])->name('validasi.data');
-        Route::post('/validasi/{id}/approve', [DppkbController::class, 'approveValidasi'])->name('validasi.approve');
-        Route::post('/validasi/{id}/klarifikasi', [DppkbController::class, 'mintaKlarifikasi'])->name('validasi.klarifikasi');
-        Route::get('/validasi/{id}/detail', [DppkbController::class, 'validasiDetail'])->name('validasi.detail');
+        Route::get('/validasi', [DPPKBController::class, 'validasi'])->name('validasi');
+        Route::get('/validasi/data', [DPPKBController::class, 'validasiData'])->name('validasi.data');
+        Route::post('/validasi/{id}/approve', [DPPKBController::class, 'approveValidasi'])->name('validasi.approve');
+        Route::post('/validasi/{id}/klarifikasi', [DPPKBController::class, 'mintaKlarifikasi'])->name('validasi.klarifikasi');
+        Route::get('/validasi/{id}/detail', [DPPKBController::class, 'validasiDetail'])->name('validasi.detail');
         
-        // Laporan Daerah
-        Route::get('/laporan', [DppkbController::class, 'laporan'])->name('laporan');
-        Route::post('/laporan/generate', [DppkbController::class, 'generateLaporan'])->name('laporan.generate');
-        Route::get('/laporan/{id}/download', [DppkbController::class, 'downloadLaporan'])->name('laporan.download');
-        Route::get('/laporan/{id}/preview', [DppkbController::class, 'previewLaporan'])->name('laporan.preview');
+        // NOTIFIKASI ROUTES (Updated: Removed 'dppkb.' prefix)
+        Route::get('/notifikasi', [DPPKBController::class, 'notifikasi'])->name('notifikasi'); 
+        Route::get('/notifikasi/stats', [DPPKBController::class, 'notifikasiStats'])->name('notifikasi.stats'); // Added name for consistency
+        Route::get('/notifikasi/{id}', [DPPKBController::class, 'notifikasiDetail'])->name('notifikasi.detail');
+        Route::post('/notifikasi/{id}/read', [DPPKBController::class, 'notifikasiMarkAsRead'])->name('notifikasi.read');
+        Route::post('/notifikasi/mark-all-read', [DPPKBController::class, 'notifikasiMarkAllRead'])->name('notifikasi.read-all');
+        Route::delete('/notifikasi/{id}', [DPPKBController::class, 'notifikasiDelete'])->name('notifikasi.delete');
         
-        // Statistik & Analytics
-        Route::get('/statistik', [DppkbController::class, 'statistik'])->name('statistik');
-        Route::get('/statistik/tren', [DppkbController::class, 'statistikTren'])->name('statistik.tren');
-        Route::get('/statistik/komparasi', [DppkbController::class, 'statistikKomparasi'])->name('statistik.komparasi');
-        Route::get('/statistik/export', [DppkbController::class, 'exportStatistik'])->name('statistik.export');
+        // COMPOSE & SEND (Updated: Removed 'dppkb.' prefix)
+        Route::post('/notifikasi/send', [DPPKBController::class, 'sendNotifikasi'])->name('notifikasi.send'); 
+        Route::get('/notifikasi/users', [DPPKBController::class, 'getUsersList'])->name('notifikasi.users');
+        Route::get('/notifikasi/stunting-data', [DPPKBController::class, 'getStuntingDataList'])->name('notifikasi.stunting-data');
         
-        // Notifikasi
-        Route::get('/notifikasi', [DppkbController::class, 'notifikasi'])->name('notifikasi');
-        Route::post('/notifikasi/{id}/read', [DppkbController::class, 'markAsRead'])->name('notifikasi.read');
-        Route::post('/notifikasi/read-all', [DppkbController::class, 'markAllAsRead'])->name('notifikasi.read-all');
+        // STATISTIK ROUTES (Updated: Removed 'dppkb.' prefix)
+        Route::get('/statistik', [DPPKBController::class, 'statistik'])->name('statistik');
+        Route::get('/statistik/detail/{wilayah}', [DPPKBController::class, 'statistikDetailWilayah'])->name('statistik.detail'); // Added name
+        Route::post('/statistik/export', [DPPKBController::class, 'statistikExport'])->name('statistik.export'); // Added name
+        Route::get('/statistik/export-detail/{kode}', [DPPKBController::class, 'statistikExportDetail'])->name('statistik.export-detail'); // Added name
+        
+        // LAPORAN ROUTES (Updated: Removed 'dppkb.' prefix)
+        Route::get('/laporan', [DPPKBController::class, 'laporan'])->name('laporan');
+        Route::get('/laporan/count', [DPPKBController::class, 'laporanCount'])->name('laporan.count');
+        Route::post('/laporan/generate', [DPPKBController::class, 'generateLaporan'])->name('laporan.generate'); // Fixed method name to match controller
+        Route::post('/laporan/preview', [DPPKBController::class, 'laporanPreview'])->name('laporan.preview');
+        Route::get('/laporan/{id}/download', [DPPKBController::class, 'laporanDownload'])->name('laporan.download');
+        Route::post('/laporan/share', [DPPKBController::class, 'laporanShare'])->name('laporan.share');
+        Route::delete('/laporan/{id}', [DPPKBController::class, 'laporanDelete'])->name('laporan.delete');
     });
     
     // Orang Tua Routes
