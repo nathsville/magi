@@ -68,10 +68,11 @@
                     </div>
                 </div>
 
-                {{-- Status Badge --}}
-                @if($anak->stuntingTerakhir)
+                {{-- Status Badge (DIPERBARUI) --}}
+                @if($anak->pengukuranTerakhir && $anak->pengukuranTerakhir->dataStunting)
                     @php
-                        $status = $anak->stuntingTerakhir->status_stunting;
+                        // Menggunakan data dari pengukuranTerakhir agar konsisten dengan filter
+                        $status = $anak->pengukuranTerakhir->dataStunting->status_stunting;
                         $colorClass = match($status) {
                             'Normal' => 'bg-green-50 text-green-700 border-green-200',
                             'Stunting Ringan' => 'bg-yellow-50 text-yellow-700 border-yellow-200',

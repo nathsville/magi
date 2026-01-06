@@ -17,7 +17,7 @@
 <script>
 let growthChart;
 const chartData = {
-    labels: @json($riwayatPengukuran->pluck('tanggal_ukur')->map(fn($date) => \Carbon\Carbon::parse($date)->format('M Y'))),
+    labels: @json($riwayatPengukuran->pluck('tanggal_ukur')->map(fn($date) => \Carbon\Carbon::parse($date)->translatedFormat('M Y'))),
     beratBadan: @json($riwayatPengukuran->pluck('berat_badan')),
     tinggiBadan: @json($riwayatPengukuran->pluck('tinggi_badan')),
     statuses: @json($riwayatPengukuran->map(fn($m) => $m->stunting ? $m->stunting->status_stunting : 'Normal'))

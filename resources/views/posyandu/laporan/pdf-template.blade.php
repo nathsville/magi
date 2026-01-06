@@ -595,8 +595,8 @@
                 <tr>
                     <td class="center">{{ $index + 1 }}</td>
                     <td class="center">{{ \Carbon\Carbon::parse($data->tanggal_ukur)->format('d/m/Y') }}</td>
-                    <td>{{ $data->anak->nik_anak }}</td>
-                    <td>{{ $data->anak->nama_anak }}</td>
+                    <td>{{ optional($data->anak)->nik_anak ?? '-' }}</td>
+                    <td>{{ optional($data->anak)->nama_anak ?? 'Data Anak Hilang' }}</td>
                     <td class="center">{{ $data->umur_bulan }} bln</td>
                     <td class="number">{{ number_format($data->berat_badan, 1) }}</td>
                     <td class="number">{{ number_format($data->tinggi_badan, 1) }}</td>

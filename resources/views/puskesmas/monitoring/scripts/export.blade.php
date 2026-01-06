@@ -71,12 +71,12 @@ function showExportModal() {
 
 function exportData(format) {
     Swal.close();
-    
-    // Get current filter parameters
+
+    // Ambil parameter filter saat ini
     const params = new URLSearchParams(window.location.search);
     params.append('export', format);
-    
-    // Show loading
+
+    // Tampilkan loading
     Swal.fire({
         title: 'Memproses Export...',
         html: 'Mohon tunggu sebentar',
@@ -85,20 +85,15 @@ function exportData(format) {
             Swal.showLoading();
         }
     });
-    
-    // TODO: Implement actual export functionality
-    // For now, just show success message
+
+    // --- PERBAIKAN: Redirect ke URL export ---
+    // Arahkan window ke URL download. Browser akan otomatis mendownload file
+    // dan halaman tidak akan berpindah jika server mengirim header attachment.
+    window.location.href = `{{ route('puskesmas.monitoring') }}?${params.toString()}`;
+
+    // Opsional: Tutup loading setelah beberapa detik (karena kita tidak bisa mendeteksi kapan download selesai secara akurat via window.location)
     setTimeout(() => {
-        Swal.fire({
-            icon: 'success',
-            title: 'Export Berhasil!',
-            text: `File ${format.toUpperCase()} sedang diunduh`,
-            timer: 2000,
-            showConfirmButton: false
-        });
-        
-        // In production, trigger download:
-        // window.location.href = `/puskesmas/monitoring/export?${params.toString()}`;
-    }, 1500);
+        Swal.close();
+    }, 3000);
 }
 </script>

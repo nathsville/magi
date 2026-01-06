@@ -11,11 +11,15 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     protected $table = 'users';
+    
+    // PENTING: Karena PK di database adalah 'id_user' (bukan 'id')
     protected $primaryKey = 'id_user';
+    
     public $timestamps = true;
     const CREATED_AT = 'created_at';
     const UPDATED_AT = 'updated_at';
 
+    // === BAGIAN INI YANG DIPERBAIKI ===
     protected $fillable = [
         'username',
         'password',
@@ -23,18 +27,22 @@ class User extends Authenticatable
         'role',
         'email',
         'no_telepon',
-        'status'
+        'status',
+        'otp_code',       // <--- WAJIB ADA
+        'otp_expires_at', // <--- WAJIB ADA
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
+        'otp_code', // Sebaiknya disembunyikan juga agar tidak terekspos sembarangan
     ];
 
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'password' => 'hashed',
+        'otp_expires_at' => 'datetime', // <--- Biar otomatis jadi Carbon object
     ];
 
     /**

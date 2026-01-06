@@ -16,6 +16,8 @@ use App\Models\AuditLog;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\BroadcastMail;
 
 class AdminController extends Controller
 {
@@ -662,20 +664,21 @@ class AdminController extends Controller
 
     public function broadcastSend(Request $request)
     {
+        // 1. Validasi Input
         $validated = $request->validate([
             'judul' => 'required|string|max:200',
             'pesan' => 'required|string',
-            'tipe_pengiriman' => 'required|in:whatsapp,email,both',
+            // Kita tetap biarkan validasi tipe_pengiriman agar tidak error jika form lama masih dipakai
+            'tipe_pengiriman' => 'nullable', 
             'target_audience' => 'required|in:all,with_stunting,without_stunting'
         ]);
 
         try {
-            // Get target users (Orang Tua)
-            $query = User::where('role', 'Orang Tua')
-                ->where('status', 'Aktif')
-                ->with('orangTua.anak.dataPengukuran.dataStunting');
+            // 2. TENTUKAN TARGET PENERIMA
+            // Default: User Role 'Orang Tua' & Status 'Aktif'
+            $query = User::where('role', 'Orang Tua')->where('status', 'Aktif');
 
-            // Filter by target audience
+            // Filter Tambahan
             if ($validated['target_audience'] == 'with_stunting') {
                 $query->whereHas('orangTua.anak.dataPengukuran.dataStunting', function($q) {
                     $q->whereIn('status_stunting', ['Stunting Ringan', 'Stunting Sedang', 'Stunting Berat']);
@@ -686,78 +689,51 @@ class AdminController extends Controller
                 });
             }
 
+            // PENTING: Pastikan ada minimal 1 user Orang Tua yang punya email valid di Database
+            // $query = User::where('email', 'email_tes_anda@gmail.com'); // <-- Pakai ini cuma kalau mau tes ke diri sendiri
+
             $targetUsers = $query->get();
 
             if ($targetUsers->isEmpty()) {
                 return redirect()->route('admin.broadcast')
-                    ->with('warning', 'Tidak ada penerima yang sesuai dengan kriteria yang dipilih.');
+                    ->with('warning', 'Tidak ada Orang Tua yang ditemukan untuk kategori ini.');
             }
 
-            $successCount = 0;
-            $failCount = 0;
+            // 3. EKSEKUSI PENGIRIMAN (EMAIL ONLY)
+            $countEmail = 0;
 
             foreach ($targetUsers as $user) {
-                // Create notification record
-                $notifikasi = Notifikasi::create([
-                    'id_user' => $user->id_user,
-                    'id_stunting' => null, // Broadcast tidak terkait stunting spesifik
-                    'judul' => $validated['judul'],
-                    'pesan' => $validated['pesan'],
-                    'tipe_notifikasi' => 'Informasi',
-                    'status_baca' => 'Belum Dibaca',
-                    'tanggal_kirim' => now()
-                ]);
+                if ($user->email) {
+                    try {
+                        // Kirim Langsung (Tanpa Antrian)
+                        Mail::to($user->email)
+                            ->send(new BroadcastMail($validated['judul'], $validated['pesan']));
+                        
+                        $countEmail++;
+                        
+                        // Simpan Notifikasi ke Database
+                        Notifikasi::create([
+                            'id_user' => $user->id_user,
+                            'judul' => $validated['judul'],
+                            'pesan' => $validated['pesan'],
+                            'tipe_notifikasi' => 'Informasi',
+                            'status_baca' => 'Belum Dibaca',
+                            'tanggal_kirim' => now()
+                        ]);
 
-                $sent = false;
-
-                // Send via WhatsApp
-                if (in_array($validated['tipe_pengiriman'], ['whatsapp', 'both'])) {
-                    if ($user->no_telepon) {
-                        $whatsappSent = $this->sendWhatsAppMessage(
-                            $user->no_telepon,
-                            $validated['judul'],
-                            $validated['pesan']
-                        );
-                        if ($whatsappSent) {
-                            $sent = true;
-                        }
+                    } catch (\Exception $e) {
+                        // Jika gagal, catat log saja, jangan hentikan proses untuk user lain
+                        Log::error("Gagal kirim email ke " . $user->email . ": " . $e->getMessage());
                     }
                 }
-
-                // Send via Email
-                if (in_array($validated['tipe_pengiriman'], ['email', 'both'])) {
-                    if ($user->email) {
-                        $emailSent = $this->sendEmailNotification(
-                            $user->email,
-                            $validated['judul'],
-                            $validated['pesan']
-                        );
-                        if ($emailSent) {
-                            $sent = true;
-                        }
-                    }
-                }
-
-                if ($sent) {
-                    $successCount++;
-                } else {
-                    $failCount++;
-                }
-            }
-
-            $message = "Broadcast terkirim ke {$successCount} penerima.";
-            if ($failCount > 0) {
-                $message .= " {$failCount} gagal terkirim.";
             }
 
             return redirect()->route('admin.broadcast')
-                ->with('success', $message);
+                ->with('success', "Broadcast berhasil dikirim ke $countEmail Orang Tua via Email.");
 
         } catch (\Exception $e) {
-            \Log::error('Broadcast Error: ' . $e->getMessage());
-            
             return redirect()->route('admin.broadcast')
-                ->with('error', 'Terjadi kesalahan saat mengirim broadcast: ' . $e->getMessage());
+                ->with('error', 'Terjadi kesalahan: ' . $e->getMessage());
         }
     }
 
@@ -776,27 +752,6 @@ class AdminController extends Controller
             return true;
         } catch (\Exception $e) {
             \Log::error("WhatsApp failed to {$phoneNumber}: " . $e->getMessage());
-            return false;
-        }
-    }
-
-    /**
-     * Send Email notification
-     */
-    private function sendEmailNotification($email, $title, $message)
-    {
-        try {
-            // TODO: Implement email sending
-            \Mail::raw($message, function($mail) use ($email, $title) {
-                $mail->to($email)
-                    ->subject($title);
-            });
-            
-            \Log::info("Email sent to {$email}: {$title}");
-            
-            return true;
-        } catch (\Exception $e) {
-            \Log::error("Email failed to {$email}: " . $e->getMessage());
             return false;
         }
     }

@@ -13,7 +13,7 @@
     <div class="flex items-center justify-between mb-6">
         <h3 class="text-lg font-bold text-gray-900">Status Gizi Terkini</h3>
         <span class="text-xs text-gray-500">
-            Per {{ \Carbon\Carbon::parse($anak->pengukuranTerakhir->tanggal_ukur)->format('d M Y') }}
+            Per {{ \Carbon\Carbon::parse($anak->pengukuranTerakhir->tanggal_ukur)->translatedFormat('d M Y') }}
         </span>
     </div>
 

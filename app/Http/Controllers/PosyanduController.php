@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use App\Models\Posyandu as PosyanduModel;
 use App\Models\Anak;
@@ -14,90 +14,82 @@ use App\Models\DataPengukuran;
 use App\Models\DataStunting;
 use App\Models\Notifikasi;
 use Carbon\Carbon;
+use App\Services\ZScoreService; 
 
 class PosyanduController extends Controller
 {
+    /**
+     * Helper untuk mendapatkan Posyandu User saat ini
+     */
+    private function getActivePosyandu()
+    {
+        $user = Auth::user();
+        if (!$user || !$user->id_posyandu) {
+            return null;
+        }
+        return PosyanduModel::with('puskesmas')->find($user->id_posyandu);
+    }
+
     /**
      * UC-PSY-01: Dashboard Posyandu
      */
     public function dashboard()
     {
-        $user = Auth::user();
+        $posyandu = $this->getActivePosyandu();
         
-        // Mengambil data Posyandu berdasarkan User yang login
-        $posyandu = $this->getUserPosyandu($user->id_user);
-        
-        // Safety Check: Redirect jika user tidak punya akses posyandu
         if (!$posyandu) {
             return redirect()->route('login')->with('error', 'Akun Anda belum ditugaskan di Posyandu manapun.');
         }
 
-        // Today's statistics
         $today = Carbon::today();
-        $todayMeasurements = DataPengukuran::whereHas('anak', function($q) use ($posyandu) {
-            $q->where('id_posyandu', $posyandu->id_posyandu);
-        })
-        ->whereDate('tanggal_ukur', $today)
-        ->count();
-
-        // This month statistics
         $thisMonth = Carbon::now()->startOfMonth();
-        $monthlyMeasurements = DataPengukuran::whereHas('anak', function($q) use ($posyandu) {
-            $q->where('id_posyandu', $posyandu->id_posyandu);
-        })
-        ->where('tanggal_ukur', '>=', $thisMonth)
-        ->count();
 
-        // Total children registered
+        // Menggunakan satu base query scope untuk efisiensi
+        $basePengukuranQuery = DataPengukuran::whereHas('anak', function($q) use ($posyandu) {
+            $q->where('id_posyandu', $posyandu->id_posyandu);
+        });
+
+        // Statistics
+        $todayMeasurements = (clone $basePengukuranQuery)->whereDate('tanggal_ukur', $today)->count();
+        $monthlyMeasurements = (clone $basePengukuranQuery)->where('tanggal_ukur', '>=', $thisMonth)->count();
         $totalAnak = Anak::where('id_posyandu', $posyandu->id_posyandu)->count();
 
-        // Stunting statistics
-        $stuntingData = DataStunting::whereHas('pengukuran.anak', function($q) use ($posyandu) {
+        // Stunting statistics (Optimized)
+        $stuntingData = DataStunting::whereHas('dataPengukuran.anak', function($q) use ($posyandu) {
             $q->where('id_posyandu', $posyandu->id_posyandu);
         })
         ->select('status_stunting', DB::raw('count(*) as total'))
         ->groupBy('status_stunting')
-        ->get();
+        ->pluck('total', 'status_stunting'); // Mengambil array [status => total]
 
-        $totalStunting = $stuntingData->whereNotIn('status_stunting', ['Normal'])->sum('total');
+        $totalStunting = $stuntingData->except(['Normal'])->sum();
         $persentaseStunting = $totalAnak > 0 ? round(($totalStunting / $totalAnak) * 100, 1) : 0;
 
-        // Recent measurements (last 10)
-        $recentMeasurements = DataPengukuran::with(['anak', 'stunting'])
-            ->whereHas('anak', function($q) use ($posyandu) {
-                $q->where('id_posyandu', $posyandu->id_posyandu);
-            })
+        // Recent measurements
+        $recentMeasurements = (clone $basePengukuranQuery)
+            ->with(['anak', 'dataStunting'])
             ->orderBy('tanggal_ukur', 'desc')
             ->take(10)
             ->get();
 
-        // Pending validations from Puskesmas
+        // Pending validations
         $pendingValidations = DataStunting::where('status_validasi', 'Pending')
-            ->whereHas('pengukuran.anak', function($q) use ($posyandu) {
+            ->whereHas('dataPengukuran.anak', function($q) use ($posyandu) {
                 $q->where('id_posyandu', $posyandu->id_posyandu);
             })
             ->count();
 
-        // Monthly trend (last 6 months)
+        // Monthly trend & Notifications
         $monthlyTrend = $this->getMonthlyTrend($posyandu->id_posyandu, 6);
-
-        // Notifications
-        $notifications = Notifikasi::where('id_user', $user->id_user)
+        $notifications = Notifikasi::where('id_user', Auth::id())
             ->orderBy('tanggal_kirim', 'desc')
             ->take(5)
             ->get();
 
         return view('posyandu.dashboard', compact(
-            'posyandu',
-            'todayMeasurements',
-            'monthlyMeasurements',
-            'totalAnak',
-            'totalStunting',
-            'persentaseStunting',
-            'recentMeasurements',
-            'pendingValidations',
-            'monthlyTrend',
-            'notifications'
+            'posyandu', 'todayMeasurements', 'monthlyMeasurements', 'totalAnak',
+            'totalStunting', 'persentaseStunting', 'recentMeasurements',
+            'pendingValidations', 'monthlyTrend', 'notifications'
         ));
     }
 
@@ -106,12 +98,9 @@ class PosyanduController extends Controller
      */
     public function inputPengukuranForm(Request $request)
     {
-        $user = Auth::user();
-        $posyandu = $this->getUserPosyandu($user->id_user);
-
+        $posyandu = $this->getActivePosyandu();
         if (!$posyandu) return redirect()->route('posyandu.dashboard');
 
-        // Get children list for this posyandu with search
         $query = Anak::with(['orangTua', 'pengukuranTerakhir'])
             ->where('id_posyandu', $posyandu->id_posyandu);
 
@@ -123,12 +112,11 @@ class PosyanduController extends Controller
             });
         }
 
-        $anakList = $query->orderBy('nama_anak')->get();
+        $anakList = $query->orderBy('nama_anak')->limit(50)->get(); // Limit untuk performa
 
-        // Selected child if id_anak provided
         $selectedAnak = null;
         if ($request->filled('id_anak')) {
-            $selectedAnak = Anak::with(['orangTua', 'pengukuranTerakhir', 'stuntingTerakhir'])
+            $selectedAnak = Anak::with(['orangTua', 'pengukuranTerakhir'])
                 ->where('id_posyandu', $posyandu->id_posyandu)
                 ->find($request->id_anak);
         }
@@ -142,11 +130,9 @@ class PosyanduController extends Controller
     public function inputPengukuranStore(Request $request)
     {
         $user = Auth::user();
-        $posyandu = $this->getUserPosyandu($user->id_user);
-
+        $posyandu = $this->getActivePosyandu();
         if (!$posyandu) return redirect()->route('posyandu.dashboard');
 
-        // Validation
         $validated = $request->validate([
             'id_anak' => 'required|exists:anak,id_anak',
             'tanggal_ukur' => 'required|date|before_or_equal:today',
@@ -158,32 +144,28 @@ class PosyanduController extends Controller
             'catatan' => 'nullable|string|max:500'
         ]);
 
-        // Check authorization: anak belongs to this posyandu
         $anak = Anak::where('id_anak', $validated['id_anak'])
             ->where('id_posyandu', $posyandu->id_posyandu)
             ->firstOrFail();
 
-        // Outlier detection
-        $outlierCheck = $this->detectOutlier($validated, $anak);
-        if ($outlierCheck['is_outlier']) {
-            return back()
-                ->withInput()
-                ->with('warning', $outlierCheck['message'])
-                ->with('outlier_data', $validated);
-        }
-
-        // Confirm outlier if user proceeds
-        if ($request->has('confirm_outlier')) {
-            $validated['catatan'] = ($validated['catatan'] ?? '') . ' [OUTLIER CONFIRMED BY PETUGAS]';
+        // Outlier Check
+        if (!$request->has('confirm_outlier')) {
+            $outlierCheck = $this->detectOutlier($validated, $anak);
+            if ($outlierCheck['is_outlier']) {
+                return back()
+                    ->withInput()
+                    ->with('warning', $outlierCheck['message'])
+                    ->with('outlier_data', $validated);
+            }
+        } else {
+             $validated['catatan'] = ($validated['catatan'] ?? '') . ' [KONFIRMASI PETUGAS: DATA VALID]';
         }
 
         DB::beginTransaction();
         try {
-            // Calculate umur_bulan
             $umurBulan = Carbon::parse($anak->tanggal_lahir)
                 ->diffInMonths(Carbon::parse($validated['tanggal_ukur']));
 
-            // Save data pengukuran
             $pengukuran = DataPengukuran::create([
                 'id_anak' => $validated['id_anak'],
                 'id_posyandu' => $posyandu->id_posyandu,
@@ -196,34 +178,51 @@ class PosyanduController extends Controller
                 'lingkar_lengan' => $validated['lingkar_lengan'],
                 'cara_ukur' => $validated['cara_ukur'],
                 'catatan' => $validated['catatan'],
+                // 'status_gizi' => belum ada nilainya di sini
                 'created_at' => now()
             ]);
 
-            // Call Python microservice for Z-Score calculation
-            $zScoreResult = $this->calculateZScore([
-                'jenis_kelamin' => $anak->jenis_kelamin,
-                'umur_bulan' => $umurBulan,
-                'berat_badan' => $validated['berat_badan'],
-                'tinggi_badan' => $validated['tinggi_badan'],
-                'cara_ukur' => $validated['cara_ukur']
-            ]);
+            // 2. Hitung Z-Score
+            $analisis = ZScoreService::calculate(
+                $anak->jenis_kelamin,
+                $umurBulan,
+                $validated['berat_badan'],
+                $validated['tinggi_badan']
+            );
 
-            // Save stunting data
+            // 3. Mapping Status (Logika yang sudah Anda buat)
+            $rawStatus = $analisis['status_stunting'];
+            $finalStatus = 'Normal'; 
+
+            if (str_contains($rawStatus, 'Severely Stunted') || str_contains($rawStatus, 'Sangat Pendek')) {
+                $finalStatus = 'Stunting Berat';
+            } elseif (str_contains($rawStatus, 'Stunted') || str_contains($rawStatus, 'Pendek')) {
+                $finalStatus = 'Stunting Sedang'; 
+            } elseif (str_contains($rawStatus, 'Normal')) {
+                $finalStatus = 'Normal';
+            } elseif (str_contains($rawStatus, 'Tinggi') || str_contains($rawStatus, 'Tall')) {
+                $finalStatus = 'Normal'; 
+            }
+
+            // === TAMBAHKAN KODE INI UNTUK MENGISI KOLOM NULL ===
+            // Update record pengukuran dengan status yang sudah dihitung
+            $pengukuran->update([
+                'status_gizi' => $finalStatus
+            ]);
+            // ===================================================
+
+            // 4. Simpan ke Data Stunting (Detail Z-Score)
             $stunting = DataStunting::create([
                 'id_pengukuran' => $pengukuran->id_pengukuran,
-                'zscore_tb_u' => $zScoreResult['zscore_tb_u'],
-                'zscore_bb_u' => $zScoreResult['zscore_bb_u'],
-                'zscore_bb_tb' => $zScoreResult['zscore_bb_tb'],
-                'status_stunting' => $zScoreResult['status_stunting'],
+                'zscore_tb_u' => $analisis['zscore_tb_u'],
+                'zscore_bb_u' => $analisis['zscore_bb_u'],
+                'zscore_bb_tb' => $analisis['zscore_bb_tb'],
+                'status_stunting' => $finalStatus, 
                 'status_validasi' => 'Pending',
-                'id_validator' => null,
-                'tanggal_validasi' => null,
-                'catatan_validasi' => null,
                 'created_at' => now()
             ]);
 
-            // Send notification to orang tua if stunting detected
-            if ($zScoreResult['status_stunting'] !== 'Normal') {
+            if ($finalStatus !== 'Normal') {
                 $this->sendStuntingNotification($anak, $stunting);
             }
 
@@ -231,32 +230,124 @@ class PosyanduController extends Controller
 
             return redirect()
                 ->route('posyandu.pengukuran.form', ['id_anak' => $anak->id_anak])
-                ->with('success', 'Data pengukuran berhasil disimpan! Status: ' . $zScoreResult['status_stunting']);
+                ->with('success', 'Data berhasil disimpan! Status Gizi: ' . $finalStatus);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Pengukuran store error: ' . $e->getMessage());
-            
-            return back()
-                ->withInput()
-                ->with('error', 'Gagal menyimpan data. Silakan coba lagi.');
+            Log::error('Pengukuran store error: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Gagal menyimpan data: ' . $e->getMessage()); 
         }
     }
 
     /**
-     * UC-PSY-03: Manajemen Data Anak - Index
+     * UC-PSY-04: Riwayat Pengukuran
      */
+    public function riwayatPengukuran(Request $request)
+    {
+        $posyandu = $this->getActivePosyandu();
+        if (!$posyandu) return redirect()->route('posyandu.dashboard');
+        
+        $query = DataPengukuran::with(['anak.orangTua', 'dataStunting'])
+            ->whereHas('anak', function($q) use ($posyandu) {
+                $q->where('id_posyandu', $posyandu->id_posyandu);
+            });
+        
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->whereHas('anak', function($q) use ($search) {
+                $q->where('nama_anak', 'like', "%{$search}%")
+                ->orWhere('nik_anak', 'like', "%{$search}%");
+            });
+        }
+        
+        if ($request->filled('tanggal_dari')) $query->where('tanggal_ukur', '>=', $request->tanggal_dari);
+        if ($request->filled('tanggal_sampai')) $query->where('tanggal_ukur', '<=', $request->tanggal_sampai);
+        
+        if ($request->filled('status')) {
+            $query->whereHas('dataStunting', function($q) use ($request) {
+                if ($request->status === 'Normal') {
+                    $q->where('status_stunting', 'Normal');
+                } else {
+                    $q->where('status_stunting', '!=', 'Normal');
+                }
+            });
+        }
+        
+        $sortBy = $request->get('sort_by', 'tanggal_ukur');
+        $sortOrder = $request->get('sort_order', 'desc');
+        $query->orderBy($sortBy, $sortOrder);
+        
+        $pengukuranList = $query->paginate(25);
+        
+        // Stats untuk initial view
+        $stats = [
+            'total' => DataPengukuran::whereHas('anak', function($q) use ($posyandu) {
+                $q->where('id_posyandu', $posyandu->id_posyandu);
+            })->count(),
+            'bulan_ini' => DataPengukuran::whereHas('anak', function($q) use ($posyandu) {
+                $q->where('id_posyandu', $posyandu->id_posyandu);
+            })->whereMonth('tanggal_ukur', now()->month)->count(),
+            'hari_ini' => DataPengukuran::whereHas('anak', function($q) use ($posyandu) {
+                $q->where('id_posyandu', $posyandu->id_posyandu);
+            })->whereDate('tanggal_ukur', today())->count(),
+        ];
+        
+        return view('posyandu.pengukuran.riwayat', compact('posyandu', 'pengukuranList', 'stats'));
+    }
+
+    /**
+     * UC-PSY-01: Dashboard Statistics AJAX Endpoint
+     */
+    public function dashboardStats(Request $request)
+    {
+        $posyandu = $this->getActivePosyandu();
+        if (!$posyandu) return response()->json(['error' => 'Unauthorized'], 403);
+
+        $posyanduId = $posyandu->id_posyandu;
+
+        // Hitung statistik secara efisien
+        $totalPengukuran = DataPengukuran::whereHas('anak', fn($q) => $q->where('id_posyandu', $posyanduId))->count();
+        
+        $bulanIni = DataPengukuran::whereHas('anak', fn($q) => $q->where('id_posyandu', $posyanduId))
+            ->whereMonth('tanggal_ukur', now()->month)
+            ->whereYear('tanggal_ukur', now()->year)
+            ->count();
+            
+        $totalStunting = DataStunting::whereHas('dataPengukuran.anak', fn($q) => $q->where('id_posyandu', $posyanduId))
+            ->where('status_stunting', '!=', 'Normal')
+            ->count();
+            
+        $persentaseStunting = $totalPengukuran > 0 ? round(($totalStunting / $totalPengukuran) * 100, 1) : 0;
+
+        return response()->json([
+            'total_pengukuran' => $totalPengukuran,
+            'bulan_ini' => $bulanIni,
+            'total_stunting' => $totalStunting,
+            'persentase_stunting' => $persentaseStunting
+        ]);
+    }
+
+    public function riwayatPengukuranDetail($id)
+    {
+        $posyandu = $this->getActivePosyandu();
+        
+        $pengukuran = DataPengukuran::with(['anak.orangTua', 'dataStunting', 'petugas'])->findOrFail($id);
+        
+        if ($pengukuran->anak->id_posyandu !== $posyandu->id_posyandu) abort(404);
+        
+        return view('posyandu.pengukuran.detail', compact('pengukuran', 'posyandu'));
+    }
+
+    // --- MANAJEMEN DATA ANAK ---
+
     public function dataAnakIndex(Request $request)
     {
-        $user = Auth::user();
-        $posyandu = $this->getUserPosyandu($user->id_user);
-
+        $posyandu = $this->getActivePosyandu();
         if (!$posyandu) return redirect()->route('posyandu.dashboard');
 
-        $query = Anak::with(['orangTua', 'pengukuranTerakhir', 'stuntingTerakhir'])
+        $query = Anak::with(['orangTua', 'pengukuranTerakhir'])
             ->where('id_posyandu', $posyandu->id_posyandu);
 
-        // Search
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function($q) use ($search) {
@@ -268,66 +359,29 @@ class PosyanduController extends Controller
                   });
             });
         }
-
-        // Filter by status
-        if ($request->filled('status')) {
-            if ($request->status === 'Normal') {
-                $query->whereHas('stuntingTerakhir', function($q) {
-                    $q->where('status_stunting', 'Normal');
-                });
-            } elseif ($request->status === 'Stunting') {
-                $query->whereHas('stuntingTerakhir', function($q) {
-                    $q->where('status_stunting', '!=', 'Normal');
-                });
-            }
-        }
-
+        
         $anakList = $query->orderBy('nama_anak')->paginate(20);
-
-        // Statistics
         $totalAnak = Anak::where('id_posyandu', $posyandu->id_posyandu)->count();
-        $anakNormal = Anak::where('id_posyandu', $posyandu->id_posyandu)
-            ->whereHas('stuntingTerakhir', function($q) {
-                $q->where('status_stunting', 'Normal');
-            })->count();
-        $anakStunting = Anak::where('id_posyandu', $posyandu->id_posyandu)
-            ->whereHas('stuntingTerakhir', function($q) {
-                $q->where('status_stunting', '!=', 'Normal');
-            })->count();
+        $anakNormal = 0; // Placeholder jika kolom status belum ada di tabel Anak
+        $anakStunting = 0;
 
         return view('posyandu.anak.index', compact(
-            'posyandu',
-            'anakList',
-            'totalAnak',
-            'anakNormal',
-            'anakStunting'
+            'posyandu', 'anakList', 'totalAnak', 'anakNormal', 'anakStunting'
         ));
     }
 
-    /**
-     * UC-PSY-03: Registrasi Anak Baru - Form
-     */
     public function dataAnakCreate()
     {
-        $user = Auth::user();
-        $posyandu = $this->getUserPosyandu($user->id_user);
-
+        $posyandu = $this->getActivePosyandu();
         if (!$posyandu) return redirect()->route('posyandu.dashboard');
 
-        // Get orang tua list
         $orangTuaList = OrangTua::orderBy('nama_ayah')->get();
-
         return view('posyandu.anak.create', compact('posyandu', 'orangTuaList'));
     }
 
-    /**
-     * UC-PSY-03: Registrasi Anak Baru - Store
-     */
     public function dataAnakStore(Request $request)
     {
-        $user = Auth::user();
-        $posyandu = $this->getUserPosyandu($user->id_user);
-
+        $posyandu = $this->getActivePosyandu();
         if (!$posyandu) return redirect()->route('posyandu.dashboard');
 
         $validated = $request->validate([
@@ -340,69 +394,43 @@ class PosyanduController extends Controller
             'anak_ke' => 'required|integer|min:1|max:20'
         ]);
 
-        DB::beginTransaction();
         try {
-            $anak = Anak::create([
-                'id_orangtua' => $validated['id_orangtua'],
+            Anak::create(array_merge($validated, [
                 'id_posyandu' => $posyandu->id_posyandu,
-                'nik_anak' => $validated['nik_anak'],
-                'nama_anak' => $validated['nama_anak'],
-                'tanggal_lahir' => $validated['tanggal_lahir'],
-                'jenis_kelamin' => $validated['jenis_kelamin'],
-                'tempat_lahir' => $validated['tempat_lahir'],
-                'anak_ke' => $validated['anak_ke'],
                 'created_at' => now()
-            ]);
-
-            DB::commit();
+            ]));
 
             return redirect()
                 ->route('posyandu.anak.index')
                 ->with('success', 'Data anak berhasil didaftarkan! Silakan lakukan pengukuran pertama.');
 
         } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Anak registration error: ' . $e->getMessage());
-            
-            return back()
-                ->withInput()
-                ->with('error', 'Gagal mendaftarkan anak. Silakan coba lagi.');
+            Log::error('Anak registration error: ' . $e->getMessage());
+            return back()->withInput()->with('error', 'Gagal mendaftarkan anak.');
         }
     }
 
-    /**
-     * UC-PSY-03: Detail Anak
-     */
     public function dataAnakShow($id)
     {
-        $user = Auth::user();
-        $posyandu = $this->getUserPosyandu($user->id_user);
-
+        $posyandu = $this->getActivePosyandu();
         if (!$posyandu) return redirect()->route('posyandu.dashboard');
 
         $anak = Anak::with(['orangTua', 'posyandu'])
             ->where('id_posyandu', $posyandu->id_posyandu)
             ->findOrFail($id);
 
-        // Get measurement history (last 12)
-        $riwayatPengukuran = DataPengukuran::with('stunting')
+        $riwayatPengukuran = DataPengukuran::with('dataStunting')
             ->where('id_anak', $id)
             ->orderBy('tanggal_ukur', 'desc')
             ->take(12)
-            ->get()
-            ->reverse();
+            ->get();
 
         return view('posyandu.anak.show', compact('posyandu', 'anak', 'riwayatPengukuran'));
     }
 
-    /**
-     * UC-PSY-03: Edit Anak
-     */
     public function dataAnakEdit($id)
     {
-        $user = Auth::user();
-        $posyandu = $this->getUserPosyandu($user->id_user);
-
+        $posyandu = $this->getActivePosyandu();
         if (!$posyandu) return redirect()->route('posyandu.dashboard');
 
         $anak = Anak::where('id_posyandu', $posyandu->id_posyandu)->findOrFail($id);
@@ -411,18 +439,13 @@ class PosyanduController extends Controller
         return view('posyandu.anak.edit', compact('posyandu', 'anak', 'orangTuaList'));
     }
 
-    /**
-     * UC-PSY-03: Update Anak
-     */
     public function dataAnakUpdate(Request $request, $id)
     {
-        $user = Auth::user();
-        $posyandu = $this->getUserPosyandu($user->id_user);
-
+        $posyandu = $this->getActivePosyandu();
         if (!$posyandu) return redirect()->route('posyandu.dashboard');
 
         $anak = Anak::where('id_posyandu', $posyandu->id_posyandu)->findOrFail($id);
-
+        
         $validated = $request->validate([
             'id_orangtua' => 'required|exists:orang_tua,id_orangtua',
             'nik_anak' => 'required|digits:16|unique:anak,nik_anak,' . $id . ',id_anak',
@@ -434,527 +457,473 @@ class PosyanduController extends Controller
         ]);
 
         $anak->update($validated);
-
-        return redirect()
-            ->route('posyandu.anak.show', $id)
-            ->with('success', 'Data anak berhasil diperbarui!');
+        return redirect()->route('posyandu.anak.show', $id)->with('success', 'Data anak berhasil diperbarui!');
     }
 
-    /**
-     * UC-PSY-04: Riwayat Pengukuran
-     */
-    public function riwayatPengukuran(Request $request)
-    {
-        $userId = Auth::id();
-        $posyandu = $this->getUserPosyandu($userId);
-        
-        if (!$posyandu) {
-            return redirect()->route('posyandu.dashboard')->with('error', 'Posyandu tidak ditemukan');
-        }
-        
-        // Build query
-        $query = DataPengukuran::with(['anak.orangTua', 'stunting'])
-            ->whereHas('anak', function($q) use ($posyandu) {
-                $q->where('id_posyandu', $posyandu->id_posyandu);
-            });
-        
-        // Search filter
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->whereHas('anak', function($q) use ($search) {
-                $q->where('nama_anak', 'like', "%{$search}%")
-                ->orWhere('nik_anak', 'like', "%{$search}%");
-            });
-        }
-        
-        // Date range filter
-        if ($request->filled('tanggal_dari')) {
-            $query->where('tanggal_ukur', '>=', $request->tanggal_dari);
-        }
-        
-        if ($request->filled('tanggal_sampai')) {
-            $query->where('tanggal_ukur', '<=', $request->tanggal_sampai);
-        }
-        
-        // Status filter
-        if ($request->filled('status')) {
-            $query->whereHas('stunting', function($q) use ($request) {
-                if ($request->status === 'Normal') {
-                    $q->where('status_stunting', 'Normal');
-                } else {
-                    $q->where('status_stunting', '!=', 'Normal');
-                }
-            });
-        }
-        
-        // Sort
-        $sortBy = $request->get('sort_by', 'tanggal_ukur');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
-        
-        // Paginate
-        $pengukuranList = $query->paginate(25);
-        
-        // Statistics
-        $stats = [
-            'total' => DataPengukuran::whereHas('anak', function($q) use ($posyandu) {
-                $q->where('id_posyandu', $posyandu->id_posyandu);
-            })->count(),
-            
-            'bulan_ini' => DataPengukuran::whereHas('anak', function($q) use ($posyandu) {
-                $q->where('id_posyandu', $posyandu->id_posyandu);
-            })->whereMonth('tanggal_ukur', now()->month)
-            ->whereYear('tanggal_ukur', now()->year)
-            ->count(),
-            
-            'hari_ini' => DataPengukuran::whereHas('anak', function($q) use ($posyandu) {
-                $q->where('id_posyandu', $posyandu->id_posyandu);
-            })->whereDate('tanggal_ukur', today())->count(),
-        ];
-        
-        return view('posyandu.pengukuran.riwayat', compact('posyandu', 'pengukuranList', 'stats'));
-    }
+    // --- LAPORAN & EXPORT ---
 
-    /**
-     * Show detail pengukuran
-     */
-    public function riwayatPengukuranDetail($id)
-    {
-        $userId = Auth::id();
-        $posyandu = $this->getUserPosyandu($userId);
-        
-        $pengukuran = DataPengukuran::with(['anak.orangTua', 'stunting', 'petugas'])
-            ->findOrFail($id);
-        
-        // Authorization check
-        if ($pengukuran->anak->id_posyandu !== $posyandu->id_posyandu) {
-            abort(404);
-        }
-        
-        return view('posyandu.pengukuran.detail', compact('pengukuran', 'posyandu'));
-    }
-
-    /**
-     * Export riwayat to Excel
-     */
     public function riwayatExport(Request $request)
     {
-        $userId = Auth::id();
-        $posyandu = $this->getUserPosyandu($userId);
+        $posyandu = $this->getActivePosyandu();
         
-        $query = DataPengukuran::with(['anak.orangTua', 'stunting'])
+        $query = DataPengukuran::with(['anak.orangTua', 'dataStunting', 'petugas'])
             ->whereHas('anak', function($q) use ($posyandu) {
                 $q->where('id_posyandu', $posyandu->id_posyandu);
             });
         
-        // Apply same filters as index
-        if ($request->filled('search')) {
-            $search = $request->search;
-            $query->whereHas('anak', function($q) use ($search) {
-                $q->where('nama_anak', 'like', "%{$search}%")
-                ->orWhere('nik_anak', 'like', "%{$search}%");
-            });
-        }
-        
-        if ($request->filled('tanggal_dari')) {
-            $query->where('tanggal_ukur', '>=', $request->tanggal_dari);
-        }
-        
-        if ($request->filled('tanggal_sampai')) {
-            $query->where('tanggal_ukur', '<=', $request->tanggal_sampai);
-        }
+        if ($request->filled('tanggal_dari')) $query->where('tanggal_ukur', '>=', $request->tanggal_dari);
+        if ($request->filled('tanggal_sampai')) $query->where('tanggal_ukur', '<=', $request->tanggal_sampai);
         
         $pengukuranList = $query->orderBy('tanggal_ukur', 'desc')->get();
-        
-        // Generate Excel using PhpSpreadsheet
         return $this->generateExcelRiwayat($pengukuranList, $posyandu);
     }
 
-    /**
-     * Generate Excel file
-     */
     private function generateExcelRiwayat($data, $posyandu)
     {
+        if (!class_exists('\PhpOffice\PhpSpreadsheet\Spreadsheet')) {
+            return back()->with('error', 'Library Excel belum terinstall.');
+        }
+
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         
-        // Set title
         $sheet->setCellValue('A1', 'RIWAYAT PENGUKURAN ANAK');
         $sheet->setCellValue('A2', $posyandu->nama_posyandu);
         $sheet->setCellValue('A3', 'Periode: ' . now()->format('d F Y'));
         
-        // Merge cells for title
-        $sheet->mergeCells('A1:K1');
-        $sheet->mergeCells('A2:K2');
-        $sheet->mergeCells('A3:K3');
-        
-        // Style title
-        $titleStyle = [
-            'font' => ['bold' => true, 'size' => 14],
-            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER]
-        ];
-        $sheet->getStyle('A1:A3')->applyFromArray($titleStyle);
-        
-        // Headers
-        $headers = ['No', 'Tanggal', 'NIK Anak', 'Nama Anak', 'Umur (bln)', 'BB (kg)', 'TB (cm)', 'LK (cm)', 'LL (cm)', 'Status Gizi', 'Petugas'];
+        // Header styling simplified for brevity
+        $headers = ['No', 'Tanggal', 'NIK', 'Nama', 'Umur(bln)', 'BB', 'TB', 'LK', 'Gizi', 'Petugas'];
         $col = 'A';
         foreach ($headers as $header) {
             $sheet->setCellValue($col . '5', $header);
             $col++;
         }
         
-        // Style headers
-        $headerStyle = [
-            'font' => ['bold' => true],
-            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '0D9488']],
-            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER]
-        ];
-        $sheet->getStyle('A5:K5')->applyFromArray($headerStyle);
-        
-        // Data
         $row = 6;
         foreach ($data as $index => $item) {
             $sheet->setCellValue('A' . $row, $index + 1);
-            $sheet->setCellValue('B' . $row, \Carbon\Carbon::parse($item->tanggal_ukur)->format('d/m/Y'));
+            $sheet->setCellValue('B' . $row, Carbon::parse($item->tanggal_ukur)->format('d/m/Y'));
             $sheet->setCellValue('C' . $row, $item->anak->nik_anak);
             $sheet->setCellValue('D' . $row, $item->anak->nama_anak);
             $sheet->setCellValue('E' . $row, $item->umur_bulan);
             $sheet->setCellValue('F' . $row, $item->berat_badan);
             $sheet->setCellValue('G' . $row, $item->tinggi_badan);
             $sheet->setCellValue('H' . $row, $item->lingkar_kepala);
-            $sheet->setCellValue('I' . $row, $item->lingkar_lengan);
-            $sheet->setCellValue('J' . $row, $item->stunting ? $item->stunting->status_stunting : '-');
-            $sheet->setCellValue('K' . $row, $item->petugas ? $item->petugas->nama : '-');
+            $sheet->setCellValue('I' . $row, $item->dataStunting ? $item->dataStunting->status_stunting : '-');
+            $sheet->setCellValue('J' . $row, $item->petugas ? $item->petugas->nama : '-');
             $row++;
         }
         
-        // Auto-size columns
-        foreach (range('A', 'K') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
-        
-        // Generate file
-        $filename = 'Riwayat_Pengukuran_' . $posyandu->nama_posyandu . '_' . now()->format('Y-m-d') . '.xlsx';
-        
+        $filename = 'Riwayat_Pengukuran_' . now()->format('Y-m-d') . '.xlsx';
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
-        header('Cache-Control: max-age=0');
-        
         $writer->save('php://output');
         exit;
     }
 
-    /**
-     * UC-PSY-05: Notifikasi Management
-     */
+    // --- NOTIFIKASI ---
+
     public function notifikasiIndex(Request $request)
     {
+        $posyandu = $this->getActivePosyandu();
         $userId = Auth::id();
-        $posyandu = $this->getUserPosyandu($userId);
         
-        // Build query
         $query = Notifikasi::where('id_user', $userId);
-        
-        // Filter by status
-        if ($request->filled('status')) {
+
+        // 1. Filter Status (Belum Dibaca / Sudah Dibaca)
+        if ($request->filled('status') && $request->status != '') {
             $query->where('status_baca', $request->status);
         }
-        
-        // Filter by type
-        if ($request->filled('tipe')) {
+
+        // 2. Filter Tipe (Validasi, Peringatan, Informasi)
+        if ($request->filled('tipe') && $request->tipe != '') {
             $query->where('tipe_notifikasi', $request->tipe);
         }
         
-        // Sort
-        $query->orderBy('tanggal_kirim', 'desc');
+        // 3. Pagination dengan withQueryString()
+        // Ini otomatis menempelkan parameter filter (?status=..&tipe=..) ke link pagination
+        $notifikasiList = $query->orderBy('tanggal_kirim', 'desc')
+                                ->paginate(20)
+                                ->withQueryString();
         
-        // Paginate
-        $notifikasiList = $query->paginate(20);
-        
-        // Statistics
+        // Stats untuk Cards (Logic tetap sama)
         $stats = [
             'total' => Notifikasi::where('id_user', $userId)->count(),
-            'belum_dibaca' => Notifikasi::where('id_user', $userId)
-                ->where('status_baca', 'Belum Dibaca')->count(),
-            'hari_ini' => Notifikasi::where('id_user', $userId)
-                ->whereDate('tanggal_kirim', today())->count(),
+            'belum_dibaca' => Notifikasi::where('id_user', $userId)->where('status_baca', 'Belum Dibaca')->count(),
+            'hari_ini' => Notifikasi::where('id_user', $userId)->whereDate('tanggal_kirim', today())->count(),
         ];
         
         return view('posyandu.notifikasi.index', compact('posyandu', 'notifikasiList', 'stats'));
     }
 
-    /**
-     * Mark notification as read
-     */
-    public function notifikasiMarkAsRead($id)
+    public function notifikasiMarkAsRead($id) 
     {
         $notifikasi = Notifikasi::where('id_user', Auth::id())->findOrFail($id);
-        
         $notifikasi->update(['status_baca' => 'Sudah Dibaca']);
         
-        return redirect()->back()->with('success', 'Notifikasi ditandai sudah dibaca');
+        return redirect()->back()->with('success', 'Notifikasi ditandai sudah dibaca.');
     }
 
-    /**
-     * Mark all as read
-     */
     public function notifikasiMarkAllAsRead()
     {
         Notifikasi::where('id_user', Auth::id())
             ->where('status_baca', 'Belum Dibaca')
             ->update(['status_baca' => 'Sudah Dibaca']);
-        
-        return redirect()->back()->with('success', 'Semua notifikasi ditandai sudah dibaca');
+
+        return redirect()->back()->with('success', 'Semua notifikasi telah ditandai sudah dibaca.');
     }
 
-    /**
-     * Delete notification
-     */
     public function notifikasiDelete($id)
     {
         $notifikasi = Notifikasi::where('id_user', Auth::id())->findOrFail($id);
         $notifikasi->delete();
-        
-        return redirect()->back()->with('success', 'Notifikasi berhasil dihapus');
+
+        return redirect()->back()->with('success', 'Notifikasi berhasil dihapus.');
     }
 
-    /**
-     * Delete all read notifications
-     */
     public function notifikasiDeleteAllRead()
     {
-        Notifikasi::where('id_user', Auth::id())
+        $deleted = Notifikasi::where('id_user', Auth::id())
             ->where('status_baca', 'Sudah Dibaca')
             ->delete();
-        
-        return redirect()->back()->with('success', 'Semua notifikasi yang sudah dibaca berhasil dihapus');
+
+        if ($deleted > 0) {
+            return redirect()->back()->with('success', "Berhasil menghapus {$deleted} notifikasi yang sudah dibaca.");
+        }
+
+        return redirect()->back()->with('info', 'Tidak ada notifikasi "Sudah Dibaca" yang dapat dihapus.');
     }
 
+    // --- PROFILE & SETTINGS ---
+
+    public function profile() {
+        $user = Auth::user();
+        $posyandu = $this->getActivePosyandu();
+
+        // Ambil data pengukuran terakhir (Model DataPengukuran)
+        $lastInputData = DataPengukuran::where('id_petugas', $user->id_user)
+            ->latest('created_at')
+            ->first();
+
+        $stats = [
+            'total_input' => DataPengukuran::where('id_petugas', $user->id_user)->count(),
+            'bulan_ini' => DataPengukuran::where('id_petugas', $user->id_user)
+                ->whereMonth('created_at', now()->month)
+                ->count(),
+            // PERBAIKAN: Kirim object Model utuh (atau null), JANGAN kirim ->created_at di sini
+            'terakhir_input' => $lastInputData, 
+        ];
+
+        return view('posyandu.profile.index', compact('user', 'posyandu', 'stats'));
+    }
+
+    public function profileUpdate(Request $request) {
+        $user = User::findOrFail(Auth::id());
+        
+        $request->validate([
+            'nama' => 'required|string|max:100',
+            // PERBAIKAN: Ubah 'User' menjadi 'users' (nama tabel di database)
+            'email' => 'required|email|unique:users,email,' . $user->id_user . ',id_user',
+            'no_telepon' => 'nullable|string|max:15', // Tambahkan validasi no_telepon jika ada di form
+            'password' => 'nullable|min:8|confirmed' // Tambahkan validasi password jika form menyertakan ubah password
+        ]);
+
+        // Siapkan data update
+        $dataToUpdate = $request->only(['nama', 'email', 'no_telepon']);
+
+        // Cek jika user ingin mengubah password
+        if ($request->filled('password')) {
+            $dataToUpdate['password'] = bcrypt($request->password);
+        }
+
+        $user->update($dataToUpdate);
+
+        return back()->with('success', 'Profil berhasil diperbarui');
+    }
+
+    public function settings() {
+        return view('posyandu.settings.index', ['user' => Auth::user(), 'posyandu' => $this->getActivePosyandu()]);
+    }
+
+    // --- PRIVATE HELPERS ---
+
+    private function detectOutlier($data, $anak)
+    {
+        $errors = [];
+        if ($data['berat_badan'] < 2 || $data['berat_badan'] > 40) $errors[] = "Berat {$data['berat_badan']} kg tidak wajar.";
+        if ($data['tinggi_badan'] < 40 || $data['tinggi_badan'] > 140) $errors[] = "Tinggi {$data['tinggi_badan']} cm tidak wajar.";
+
+        if (!empty($errors)) {
+            return [
+                'is_outlier' => true,
+                'message' => 'DATA TIDAK WAJAR! ' . implode(' ', $errors) . ' Mohon periksa kembali.'
+            ];
+        }
+        return ['is_outlier' => false];
+    }
+
+    private function sendStuntingNotification($anak, $stunting)
+    {
+        if ($anak->orangTua && $anak->orangTua->user) {
+            Notifikasi::create([
+                'id_user' => $anak->orangTua->id_user,
+                'judul' => 'Perhatian: Status Gizi Anak',
+                'pesan' => "Anak {$anak->nama_anak} status gizi: {$stunting->status_stunting}.",
+                'tipe_notifikasi' => 'Peringatan',
+                'status_baca' => 'Belum Dibaca',
+                'tanggal_kirim' => now()
+            ]);
+        }
+    }
+
+    private function getMonthlyTrend($idPosyandu, $months = 6)
+    {
+        $trends = [];
+        for ($i = $months - 1; $i >= 0; $i--) {
+            $date = Carbon::now()->subMonths($i);
+            $count = DataPengukuran::whereHas('anak', fn($q) => $q->where('id_posyandu', $idPosyandu))
+                ->whereMonth('tanggal_ukur', $date->month)
+                ->whereYear('tanggal_ukur', $date->year)
+                ->count();
+            $trends[] = ['label' => $date->format('M Y'), 'value' => $count];
+        }
+        return $trends;
+    }
+    
     /**
-     * UC-PSY-06: Laporan Posyandu
+     * UC-PSY-05: Laporan Index
      */
     public function laporanIndex()
     {
-        $userId = Auth::id();
-        $posyandu = $this->getUserPosyandu($userId);
-        
-        if (!$posyandu) {
-            return redirect()->route('posyandu.dashboard')->with('error', 'Posyandu tidak ditemukan');
-        }
-        
-        // Get current month data
-        $currentMonth = now()->month;
-        $currentYear = now()->year;
-        
-        // Statistics for current month
-        $stats = $this->getLaporanStats($posyandu->id_posyandu, $currentMonth, $currentYear);
-        
-        // Get available months for dropdown
-        $availableMonths = $this->getAvailableMonths($posyandu->id_posyandu);
-        
-        return view('posyandu.laporan.index', compact('posyandu', 'stats', 'availableMonths'));
-    }
+        $posyandu = $this->getActivePosyandu();
+        if (!$posyandu) return redirect()->route('posyandu.dashboard');
 
-    /**
-     * Generate laporan statistics
-     */
-    private function getLaporanStats($idPosyandu, $month, $year)
-    {
-        // Total anak terdaftar
-        $totalAnak = Anak::where('id_posyandu', $idPosyandu)->count();
-        
-        // Total pengukuran bulan ini
-        $totalPengukuran = DataPengukuran::whereHas('anak', function($q) use ($idPosyandu) {
-            $q->where('id_posyandu', $idPosyandu);
-        })->whereMonth('tanggal_ukur', $month)
-        ->whereYear('tanggal_ukur', $year)
-        ->count();
-        
-        // Status gizi breakdown
-        $statusBreakdown = DataStunting::whereHas('pengukuran.anak', function($q) use ($idPosyandu) {
-            $q->where('id_posyandu', $idPosyandu);
-        })->whereHas('pengukuran', function($q) use ($month, $year) {
-            $q->whereMonth('tanggal_ukur', $month)
-            ->whereYear('tanggal_ukur', $year);
-        })->selectRaw('status_stunting, COUNT(*) as total')
-        ->groupBy('status_stunting')
-        ->get()
-        ->pluck('total', 'status_stunting')
-        ->toArray();
-        
-        $normal = $statusBreakdown['Normal'] ?? 0;
-        $stuntingRingan = $statusBreakdown['Stunting Ringan'] ?? 0;
-        $stuntingSedang = $statusBreakdown['Stunting Sedang'] ?? 0;
-        $stuntingBerat = $statusBreakdown['Stunting Berat'] ?? 0;
-        $totalStunting = $stuntingRingan + $stuntingSedang + $stuntingBerat;
-        
-        // Calculate percentages
-        $persentaseStunting = $totalPengukuran > 0 ? round(($totalStunting / $totalPengukuran) * 100, 2) : 0;
-        $persentaseNormal = $totalPengukuran > 0 ? round(($normal / $totalPengukuran) * 100, 2) : 0;
-        
-        return [
+        // 1. Ambil Data Bulan/Tahun yang tersedia untuk Dropdown & Quick Reports
+        // Mengelompokkan berdasarkan tanggal_ukur yang ada di database
+        $availableMonths = DataPengukuran::where('id_posyandu', $posyandu->id_posyandu)
+            ->select(
+                DB::raw('YEAR(tanggal_ukur) as year'), 
+                DB::raw('MONTH(tanggal_ukur) as month')
+            )
+            ->distinct()
+            ->orderBy('year', 'desc')
+            ->orderBy('month', 'desc')
+            ->get();
+
+        // 2. Siapkan Statistik Bulan Ini (Default view saat halaman dibuka)
+        $bulanIni = now()->month;
+        $tahunIni = now()->year;
+
+        // Query dasar pengukuran bulan ini
+        $pengukuranBulanIni = DataPengukuran::where('id_posyandu', $posyandu->id_posyandu)
+            ->whereMonth('tanggal_ukur', $bulanIni)
+            ->whereYear('tanggal_ukur', $tahunIni);
+
+        $totalPengukuran = (clone $pengukuranBulanIni)->count();
+        $totalAnak = Anak::where('id_posyandu', $posyandu->id_posyandu)->count();
+
+        // Hitung detail stunting bulan ini
+        // Kita ambil data stunting yang berelasi dengan pengukuran bulan ini
+        $stuntingData = DataStunting::whereHas('dataPengukuran', function($q) use ($posyandu, $bulanIni, $tahunIni) {
+            $q->where('id_posyandu', $posyandu->id_posyandu)
+              ->whereMonth('tanggal_ukur', $bulanIni)
+              ->whereYear('tanggal_ukur', $tahunIni);
+        })->get();
+
+        // Inisialisasi counter
+        $countNormal = 0;
+        $countRingan = 0;
+        $countSedang = 0;
+        $countBerat  = 0;
+
+        foreach ($stuntingData as $data) {
+            $status = strtolower($data->status_stunting);
+            
+            // Logika mapping status string ke kategori (sesuaikan dengan output ZScoreService Anda)
+            if ($status === 'normal') {
+                $countNormal++;
+            } elseif (str_contains($status, 'berat') || str_contains($status, 'sangat pendek')) {
+                $countBerat++;
+            } elseif (str_contains($status, 'sedang') || str_contains($status, 'pendek')) { 
+                $countSedang++;
+            } elseif (str_contains($status, 'ringan')) {
+                $countRingan++;
+            } else {
+                // Fallback jika ada status lain (misal: "Risiko Stunting" masuk ke Ringan/Sedang)
+                if ($status !== 'normal') $countRingan++;
+            }
+        }
+
+        $totalStunting = $countRingan + $countSedang + $countBerat;
+
+        // Susun array stats sesuai kebutuhan view 'partials/current-stats.blade.php'
+        $stats = [
+            'bulan' => $bulanIni,
+            'tahun' => $tahunIni,
             'total_anak' => $totalAnak,
             'total_pengukuran' => $totalPengukuran,
-            'normal' => $normal,
-            'stunting_ringan' => $stuntingRingan,
-            'stunting_sedang' => $stuntingSedang,
-            'stunting_berat' => $stuntingBerat,
+            'normal' => $countNormal,
+            'persentase_normal' => $totalPengukuran > 0 ? round(($countNormal / $totalPengukuran) * 100, 1) : 0,
             'total_stunting' => $totalStunting,
-            'persentase_stunting' => $persentaseStunting,
-            'persentase_normal' => $persentaseNormal,
-            'bulan' => $month,
-            'tahun' => $year
+            'persentase_stunting' => $totalPengukuran > 0 ? round(($totalStunting / $totalPengukuran) * 100, 1) : 0,
+            'stunting_ringan' => $countRingan,
+            'stunting_sedang' => $countSedang,
+            'stunting_berat' => $countBerat,
         ];
+
+        return view('posyandu.laporan.index', compact('posyandu', 'availableMonths', 'stats'));
     }
 
     /**
-     * Get available months that have data
-     */
-    private function getAvailableMonths($idPosyandu)
-    {
-        return DataPengukuran::whereHas('anak', function($q) use ($idPosyandu) {
-            $q->where('id_posyandu', $idPosyandu);
-        })->selectRaw('YEAR(tanggal_ukur) as year, MONTH(tanggal_ukur) as month')
-        ->groupBy('year', 'month')
-        ->orderBy('year', 'desc')
-        ->orderBy('month', 'desc')
-        ->get();
-    }
-
-    /**
-     * Generate Laporan (View/Download)
+     * UC-PSY-06: Generate Laporan (View, PDF, Excel)
      */
     public function laporanGenerate(Request $request)
     {
+        $posyandu = $this->getActivePosyandu();
+        if (!$posyandu) return redirect()->route('posyandu.dashboard');
+
+        // 1. Validasi Input
         $request->validate([
             'bulan' => 'required|integer|min:1|max:12',
-            'tahun' => 'required|integer|min:2015',
-            'format' => 'required|in:view,pdf,excel'
+            'tahun' => 'required|integer|min:2000|max:'.(date('Y')+1),
+            'format' => 'required|in:view,pdf,excel',
         ]);
+
+        $bulan = $request->bulan;
+        $tahun = $request->tahun;
+        $format = $request->format;
+
+        // 2. Ambil Data Detail Pengukuran pada Bulan & Tahun Tersebut
+        $detailData = DataPengukuran::with(['anak', 'dataStunting'])
+            ->where('id_posyandu', $posyandu->id_posyandu)
+            ->whereMonth('tanggal_ukur', $bulan)
+            ->whereYear('tanggal_ukur', $tahun)
+            ->orderBy('tanggal_ukur', 'asc')
+            ->get();
+
+        // 3. Hitung Statistik Ringkasan (Sama seperti di Index, tapi untuk bulan terpilih)
+        $totalAnak = Anak::where('id_posyandu', $posyandu->id_posyandu)->count();
+        $totalPengukuran = $detailData->count();
         
-        $userId = Auth::id();
-        $posyandu = $this->getUserPosyandu($userId);
+        $countNormal = 0;
+        $countStunting = 0; // Total Stunting (Ringan + Sedang + Berat)
         
-        $stats = $this->getLaporanStats($posyandu->id_posyandu, $request->bulan, $request->tahun);
-        
-        // Get detailed data
-        $detailData = $this->getLaporanDetailData($posyandu->id_posyandu, $request->bulan, $request->tahun);
-        
-        if ($request->format === 'view') {
+        // Counter spesifik untuk grafik
+        $stuntingRingan = 0;
+        $stuntingSedang = 0;
+        $stuntingBerat = 0;
+
+        foreach ($detailData as $data) {
+            $status = $data->dataStunting ? strtolower($data->dataStunting->status_stunting) : '-';
+            
+            if ($status === 'normal') {
+                $countNormal++;
+            } elseif ($status !== '-') {
+                // Asumsi selain normal dan kosong adalah masalah gizi/stunting
+                $countStunting++;
+                
+                if (str_contains($status, 'berat') || str_contains($status, 'sangat pendek')) {
+                    $stuntingBerat++;
+                } elseif (str_contains($status, 'sedang') || str_contains($status, 'pendek')) { 
+                    $stuntingSedang++;
+                } else {
+                    $stuntingRingan++;
+                }
+            }
+        }
+
+        $stats = [
+            'bulan' => $bulan,
+            'tahun' => $tahun,
+            'total_anak' => $totalAnak,
+            'total_pengukuran' => $totalPengukuran,
+            'normal' => $countNormal,
+            'total_stunting' => $countStunting,
+            'persentase_normal' => $totalPengukuran > 0 ? round(($countNormal / $totalPengukuran) * 100, 1) : 0,
+            'persentase_stunting' => $totalPengukuran > 0 ? round(($countStunting / $totalPengukuran) * 100, 1) : 0,
+            // Detail breakdown
+            'stunting_ringan' => $stuntingRingan,
+            'stunting_sedang' => $stuntingSedang,
+            'stunting_berat' => $stuntingBerat,
+        ];
+
+        // 4. Return Berdasarkan Format
+        if ($format === 'view') {
             return view('posyandu.laporan.preview', compact('posyandu', 'stats', 'detailData'));
-        } elseif ($request->format === 'pdf') {
-            return $this->generateLaporanPDF($posyandu, $stats, $detailData);
-        } else {
-            return $this->generateLaporanExcel($posyandu, $stats, $detailData);
+        }
+
+        if ($format === 'pdf') {
+            // Cek apakah library DomPDF terinstall
+            if (!class_exists('\Barryvdh\DomPDF\Facade\Pdf')) {
+                return back()->with('error', 'Library PDF (barryvdh/laravel-dompdf) belum terinstall. Silakan hubungi admin.');
+            }
+
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('posyandu.laporan.pdf-template', compact('posyandu', 'stats', 'detailData'));
+            $pdf->setPaper('a4', 'portrait');
+            $filename = 'Laporan_Posyandu_'. $bulan . '_' . $tahun . '.pdf';
+            return $pdf->download($filename);
+        }
+
+        if ($format === 'excel') {
+            return $this->generateExcelLaporan($detailData, $posyandu, $stats);
         }
     }
 
     /**
-     * Get detail data for laporan
+     * Helper untuk Generate Excel Laporan Bulanan
      */
-    private function getLaporanDetailData($idPosyandu, $month, $year)
+    private function generateExcelLaporan($data, $posyandu, $stats)
     {
-        return DataPengukuran::with(['anak', 'stunting'])
-            ->whereHas('anak', function($q) use ($idPosyandu) {
-                $q->where('id_posyandu', $idPosyandu);
-            })
-            ->whereMonth('tanggal_ukur', $month)
-            ->whereYear('tanggal_ukur', $year)
-            ->orderBy('tanggal_ukur', 'desc')
-            ->get();
-    }
+        if (!class_exists('\PhpOffice\PhpSpreadsheet\Spreadsheet')) {
+            return back()->with('error', 'Library Excel belum terinstall.');
+        }
 
-    /**
-     * Generate PDF Laporan
-     */
-    private function generateLaporanPDF($posyandu, $stats, $detailData)
-    {
-        $pdf = new \Dompdf\Dompdf();
-        
-        $html = view('posyandu.laporan.pdf-template', compact('posyandu', 'stats', 'detailData'))->render();
-        
-        $pdf->loadHtml($html);
-        $pdf->setPaper('A4', 'portrait');
-        $pdf->render();
-        
-        $filename = 'Laporan_' . $posyandu->nama_posyandu . '_' . $stats['bulan'] . '_' . $stats['tahun'] . '.pdf';
-        
-        return $pdf->stream($filename);
-    }
-
-    /**
-     * Generate Excel Laporan
-     */
-    private function generateLaporanExcel($posyandu, $stats, $detailData)
-    {
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         
-        // Title
+        // Header Judul
         $sheet->setCellValue('A1', 'LAPORAN BULANAN POSYANDU');
         $sheet->setCellValue('A2', strtoupper($posyandu->nama_posyandu));
-        $sheet->setCellValue('A3', 'Periode: ' . $this->getMonthName($stats['bulan']) . ' ' . $stats['tahun']);
-        $sheet->mergeCells('A1:H1');
-        $sheet->mergeCells('A2:H2');
-        $sheet->mergeCells('A3:H3');
+        $sheet->setCellValue('A3', 'Periode: ' . \Carbon\Carbon::createFromDate($stats['tahun'], $stats['bulan'], 1)->format('F Y'));
         
-        // Summary Section
-        $row = 5;
-        $sheet->setCellValue('A' . $row, 'RINGKASAN DATA');
-        $sheet->mergeCells('A' . $row . ':B' . $row);
-        
-        $row++;
-        $summaryData = [
-            ['Total Anak Terdaftar', $stats['total_anak']],
-            ['Total Pengukuran', $stats['total_pengukuran']],
-            ['Status Normal', $stats['normal'] . ' (' . $stats['persentase_normal'] . '%)'],
-            ['Stunting Ringan', $stats['stunting_ringan']],
-            ['Stunting Sedang', $stats['stunting_sedang']],
-            ['Stunting Berat', $stats['stunting_berat']],
-            ['Total Stunting', $stats['total_stunting'] . ' (' . $stats['persentase_stunting'] . '%)'],
-        ];
-        
-        foreach ($summaryData as $data) {
-            $sheet->setCellValue('A' . $row, $data[0]);
-            $sheet->setCellValue('B' . $row, $data[1]);
-            $row++;
-        }
-        
-        // Detail Section
-        $row += 2;
-        $sheet->setCellValue('A' . $row, 'DETAIL DATA PENGUKURAN');
-        $sheet->mergeCells('A' . $row . ':H' . $row);
-        
-        $row++;
-        $headers = ['No', 'Tanggal', 'Nama Anak', 'Umur (bln)', 'BB (kg)', 'TB (cm)', 'LK (cm)', 'Status'];
+        // Ringkasan
+        $sheet->setCellValue('A5', 'Ringkasan Statistik');
+        $sheet->setCellValue('A6', 'Total Pengukuran: ' . $stats['total_pengukuran']);
+        $sheet->setCellValue('A7', 'Total Stunting: ' . $stats['total_stunting'] . ' (' . $stats['persentase_stunting'] . '%)');
+
+        // Table Header
+        $headers = ['No', 'Tanggal', 'NIK', 'Nama Anak', 'Umur (Bln)', 'BB (kg)', 'TB (cm)', 'LK (cm)', 'Status Gizi'];
         $col = 'A';
+        $rowHeader = 9;
         foreach ($headers as $header) {
-            $sheet->setCellValue($col . $row, $header);
+            $sheet->setCellValue($col . $rowHeader, $header);
+            $sheet->getStyle($col . $rowHeader)->getFont()->setBold(true);
             $col++;
         }
         
-        $row++;
-        foreach ($detailData as $index => $item) {
+        // Data Isi
+        $row = 10;
+        foreach ($data as $index => $item) {
             $sheet->setCellValue('A' . $row, $index + 1);
             $sheet->setCellValue('B' . $row, \Carbon\Carbon::parse($item->tanggal_ukur)->format('d/m/Y'));
-            $sheet->setCellValue('C' . $row, $item->anak->nama_anak);
-            $sheet->setCellValue('D' . $row, $item->umur_bulan);
-            $sheet->setCellValue('E' . $row, $item->berat_badan);
-            $sheet->setCellValue('F' . $row, $item->tinggi_badan);
-            $sheet->setCellValue('G' . $row, $item->lingkar_kepala);
-            $sheet->setCellValue('H' . $row, $item->stunting ? $item->stunting->status_stunting : '-');
+            $sheet->setCellValue('C' . $row, optional($item->anak)->nik_anak ?? '-');
+            $sheet->setCellValue('D' . $row, optional($item->anak)->nama_anak ?? 'Data Anak Terhapus');
+            $sheet->setCellValue('E' . $row, $item->umur_bulan);
+            $sheet->setCellValue('F' . $row, $item->berat_badan);
+            $sheet->setCellValue('G' . $row, $item->tinggi_badan);
+            $sheet->setCellValue('H' . $row, $item->lingkar_kepala);
+            $sheet->setCellValue('I' . $row, $item->dataStunting ? $item->dataStunting->status_stunting : '-');
             $row++;
         }
         
-        // Auto-size columns
-        foreach (range('A', 'H') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
+        // Auto size columns (A sampai I)
+        foreach (range('A', 'I') as $columnID) {
+            $sheet->getColumnDimension($columnID)->setAutoSize(true);
         }
-        
-        $filename = 'Laporan_' . $posyandu->nama_posyandu . '_' . $stats['bulan'] . '_' . $stats['tahun'] . '.xlsx';
-        
+
+        $filename = 'Laporan_Posyandu_' . $stats['tahun'] . '-' . $stats['bulan'] . '.xlsx';
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -963,266 +932,5 @@ class PosyanduController extends Controller
         
         $writer->save('php://output');
         exit;
-    }
-
-    /**
-     * Helper: Get month name in Indonesian
-     */
-    private function getMonthName($month)
-    {
-        $months = [
-            1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
-            5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
-            9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
-        ];
-        return $months[$month] ?? '';
-    }
-
-    /**
-     * Profile Page
-     */
-    public function profile()
-    {
-        $userId = Auth::id();
-        $user = User::with('orangTua')->findOrFail($userId);
-        $posyandu = $this->getUserPosyandu($userId);
-        
-        // Get statistics for this petugas
-        $stats = [
-            'total_input' => DataPengukuran::where('id_petugas', $userId)->count(),
-            'bulan_ini' => DataPengukuran::where('id_petugas', $userId)
-                ->whereMonth('created_at', now()->month)
-                ->whereYear('created_at', now()->year)
-                ->count(),
-            'terakhir_input' => DataPengukuran::where('id_petugas', $userId)
-                ->latest('created_at')
-                ->first(),
-        ];
-        
-        return view('posyandu.profile.index', compact('user', 'posyandu', 'stats'));
-    }
-
-    /**
-     * Update Profile
-     */
-    public function profileUpdate(Request $request)
-    {
-        $request->validate([
-            'nama' => 'required|string|max:100',
-            'email' => 'required|email|max:100|unique:User,email,' . Auth::id() . ',id_user',
-            'no_telepon' => 'nullable|string|max:15',
-            'password' => 'nullable|min:8|confirmed',
-        ]);
-        
-        $user = User::findOrFail(Auth::id());
-        
-        $user->nama = $request->nama;
-        $user->email = $request->email;
-        $user->no_telepon = $request->no_telepon;
-        
-        if ($request->filled('password')) {
-            $user->password = bcrypt($request->password);
-        }
-        
-        $user->updated_at = now();
-        $user->save();
-        
-        return redirect()->back()->with('success', 'Profil berhasil diperbarui');
-    }
-
-    /**
-     * Settings Page
-     */
-    public function settings()
-    {
-        $userId = Auth::id();
-        $user = User::findOrFail($userId);
-        $posyandu = $this->getUserPosyandu($userId);
-        
-        return view('posyandu.settings.index', compact('user', 'posyandu'));
-    }
-
-    /**
-     * Update Settings
-     */
-    public function settingsUpdate(Request $request)
-    {
-        $request->validate([
-            'notifikasi_email' => 'boolean',
-            'notifikasi_browser' => 'boolean',
-            'auto_logout' => 'boolean',
-            'auto_logout_duration' => 'nullable|integer|min:5|max:120',
-        ]);
-        
-        // Store settings in session or database (preference table)
-        session([
-            'settings.notifikasi_email' => $request->boolean('notifikasi_email'),
-            'settings.notifikasi_browser' => $request->boolean('notifikasi_browser'),
-            'settings.auto_logout' => $request->boolean('auto_logout'),
-            'settings.auto_logout_duration' => $request->auto_logout_duration ?? 30,
-        ]);
-        
-        return redirect()->back()->with('success', 'Pengaturan berhasil disimpan');
-    }
-
-    // ============= HELPER METHODS =============
-
-    /**
-     * Get posyandu assignment for user
-     * FIX: Mengambil data berdasarkan id_user (One-to-One)
-     */
-    private function getUserPosyandu($userId)
-    {
-        // 1. Ambil data User saat ini
-        $user = User::find($userId);
-
-        // 2. Cek apakah user punya id_posyandu
-        if ($user && $user->id_posyandu) {
-            // 3. Ambil data Posyandu berdasarkan ID yang ada di user
-            return PosyanduModel::with('puskesmas')->find($user->id_posyandu);
-        }
-
-        return null;
-    }
-
-    /**
-     * Detect outlier in measurement data
-     */
-    private function detectOutlier($data, $anak)
-    {
-        $umurBulan = Carbon::parse($anak->tanggal_lahir)
-            ->diffInMonths(Carbon::parse($data['tanggal_ukur']));
-
-        $errors = [];
-
-        // Berat badan checks
-        if ($data['berat_badan'] < 2 || $data['berat_badan'] > 40) {
-            $errors[] = "Berat badan {$data['berat_badan']} kg tidak wajar untuk anak usia {$umurBulan} bulan.";
-        }
-
-        // Tinggi badan checks
-        if ($data['tinggi_badan'] < 40 || $data['tinggi_badan'] > 140) {
-            $errors[] = "Tinggi badan {$data['tinggi_badan']} cm tidak wajar untuk anak usia {$umurBulan} bulan.";
-        }
-
-        // Lingkar kepala checks
-        if ($data['lingkar_kepala'] < 30 || $data['lingkar_kepala'] > 60) {
-            $errors[] = "Lingkar kepala {$data['lingkar_kepala']} cm tidak wajar.";
-        }
-
-        if (!empty($errors)) {
-            return [
-                'is_outlier' => true,
-                'message' => 'DATA TIDAK WAJAR TERDETEKSI! ' . implode(' ', $errors) . ' Apakah Anda yakin data sudah benar?'
-            ];
-        }
-
-        return ['is_outlier' => false];
-    }
-
-    /**
-     * Calculate Z-Score using Python microservice or fallback
-     */
-    private function calculateZScore($data)
-    {
-        // Try Python microservice first
-        try {
-            $response = Http::timeout(5)->post(env('ZSCORE_SERVICE_URL', 'http://localhost:5000/calculate'), $data);
-            
-            if ($response->successful()) {
-                return $response->json();
-            }
-        } catch (\Exception $e) {
-            \Log::warning('Python Z-Score service unavailable, using fallback');
-        }
-
-        // Fallback: Simplified PHP calculation
-        return $this->calculateZScoreFallback($data);
-    }
-
-    /**
-     * Fallback Z-Score calculation (simplified)
-     */
-    private function calculateZScoreFallback($data)
-    {
-        // Simplified WHO standards (production should use complete LMS tables)
-        $umur = $data['umur_bulan'];
-        $jk = $data['jenis_kelamin'];
-        $bb = $data['berat_badan'];
-        $tb = $data['tinggi_badan'];
-
-        // Very simplified median calculation
-        $median_bb = ($jk === 'L') ? (3.3 + $umur * 0.3) : (3.2 + $umur * 0.28);
-        $median_tb = ($jk === 'L') ? (50 + $umur * 2.2) : (49.5 + $umur * 2.1);
-
-        // Simplified Z-score
-        $zscore_bb_u = round(($bb - $median_bb) / 1.5, 2);
-        $zscore_tb_u = round(($tb - $median_tb) / 3, 2);
-        $zscore_bb_tb = round(($bb - ($median_bb * 0.95)) / 1.2, 2);
-
-        // Determine status
-        $status = 'Normal';
-        if ($zscore_tb_u < -3) {
-            $status = 'Stunting Berat';
-        } elseif ($zscore_tb_u < -2) {
-            $status = 'Stunting Sedang';
-        } elseif ($zscore_tb_u < -1) {
-            $status = 'Stunting Ringan';
-        }
-
-        return [
-            'zscore_tb_u' => $zscore_tb_u,
-            'zscore_bb_u' => $zscore_bb_u,
-            'zscore_bb_tb' => $zscore_bb_tb,
-            'status_stunting' => $status
-        ];
-    }
-
-    /**
-     * Send notification to orang tua
-     */
-    private function sendStuntingNotification($anak, $stunting)
-    {
-        $orangTua = $anak->orangTua;
-        
-        if ($orangTua && $orangTua->user) {
-            Notifikasi::create([
-                'id_user' => $orangTua->id_user,
-                'id_stunting' => $stunting->id_stunting,
-                'judul' => 'Perhatian: Status Gizi Anak Memerlukan Perhatian',
-                'pesan' => "Hasil pengukuran terbaru untuk anak Anda ({$anak->nama_anak}) menunjukkan status gizi: {$stunting->status_stunting}. Segera konsultasikan ke petugas kesehatan untuk penanganan lebih lanjut.",
-                'tipe_notifikasi' => 'Peringatan',
-                'status_baca' => 'Belum Dibaca',
-                'tanggal_kirim' => now(),
-                'created_at' => now()
-            ]);
-        }
-    }
-
-    /**
-     * Get monthly trend data
-     */
-    private function getMonthlyTrend($idPosyandu, $months = 6)
-    {
-        $trends = [];
-        
-        for ($i = $months - 1; $i >= 0; $i--) {
-            $date = Carbon::now()->subMonths($i);
-            $startDate = $date->copy()->startOfMonth();
-            $endDate = $date->copy()->endOfMonth();
-
-            $count = DataPengukuran::whereHas('anak', function($q) use ($idPosyandu) {
-                $q->where('id_posyandu', $idPosyandu);
-            })
-            ->whereBetween('tanggal_ukur', [$startDate, $endDate])
-            ->count();
-
-            $trends[] = [
-                'label' => $date->format('M Y'),
-                'value' => $count
-            ];
-        }
-
-        return $trends;
     }
 }

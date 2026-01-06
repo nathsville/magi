@@ -17,7 +17,7 @@
             Kembali ke Data Anak
         </a>
         <div class="text-sm text-gray-500">
-            Terdaftar: {{ $anak->created_at->format('d M Y') }}
+            Terdaftar: {{ $anak->created_at->translatedFormat('d M Y') }}
         </div>
     </div>
 

@@ -1,112 +1,50 @@
-<div class="bg-white rounded-2xl shadow-lg p-6">
-    <h3 class="text-xl font-bold text-gray-800 mb-6 flex items-center">
-        <i class="fas fa-key text-purple-600 mr-2"></i>Ubah Password
-    </h3>
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="bg-[#000878] px-6 py-4 border-b border-gray-200">
+        <h2 class="text-lg font-semibold text-white flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+            Ubah Password
+        </h2>
+    </div>
 
-    <form method="POST" action="{{ route('orangtua.profile.change-password') }}" id="passwordForm">
+    <form method="POST" action="{{ route('orangtua.profile.change-password') }}" class="p-6">
         @csrf
+        
+        {{-- Hidden fields to preserve other data (untuk kompatibilitas) --}}
+        <input type="hidden" name="nama" value="{{ $user->nama }}">
+        <input type="hidden" name="email" value="{{ $user->email }}">
+        <input type="hidden" name="no_telepon" value="{{ $user->no_telepon }}">
 
-        <div class="space-y-4">
-            {{-- Current Password --}}
+        <div class="space-y-5">
+            {{-- Password Lama (Diperlukan di modul Orangtua) --}}
             <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                    Password Lama <span class="text-red-500">*</span>
-                </label>
-                <div class="relative">
-                    <input type="password" 
-                           name="current_password" 
-                           id="currentPassword"
-                           required
-                           class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent @error('current_password') border-red-500 @enderror">
-                    <button type="button" 
-                            onclick="togglePassword('currentPassword', this)"
-                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                </div>
-                @error('current_password')
-                <p class="text-red-500 text-sm mt-1">{{ $message }}</p>
-                @enderror
+                <label class="block text-sm font-medium text-gray-700 mb-1">Password Lama <span class="text-red-500">*</span></label>
+                <input type="password" name="current_password" required
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#000878] focus:border-[#000878] transition-colors @error('current_password') border-red-500 @enderror">
+                @error('current_password') <p class="text-red-500 text-xs mt-1">{{ $message }}</p> @enderror
             </div>
 
-            {{-- New Password --}}
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                    Password Baru <span class="text-red-500">*</span>
-                </label>
-                <div class="relative">
-                    <input type="password" 
-                           name="password" 
-                           id="newPassword"
-                           minlength="8"
-                           required
-                           class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent @error('password') border-red-500 @enderror">
-                    <button type="button" 
-                            onclick="togglePassword('newPassword', this)"
-                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
-                        <i class="fas fa-eye"></i>
-                    </button>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password Baru</label>
+                    <input type="password" name="password" minlength="8" required
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#000878] focus:border-[#000878] transition-colors @error('password') border-red-500 @enderror">
+                    <p class="text-[11px] text-gray-500 mt-1">Min. 8 karakter. Kombinasi huruf & angka.</p>
+                    @error('password') <p class="text-red-500 text-xs mt-1">{{ $message }}</p> @enderror
                 </div>
-                @error('password')
-                <p class="text-red-500 text-sm mt-1">{{ $message }}</p>
-                @enderror
-                <p class="text-xs text-gray-500 mt-1">Minimal 8 karakter</p>
-                
-                {{-- Password Strength Indicator --}}
-                <div id="passwordStrength" class="mt-2 hidden">
-                    <div class="flex items-center space-x-2">
-                        <div class="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div id="strengthBar" class="h-full transition-all duration-300" style="width: 0%"></div>
-                        </div>
-                        <span id="strengthText" class="text-xs font-medium"></span>
-                    </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Konfirmasi Password</label>
+                    <input type="password" name="password_confirmation" minlength="8" required
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#000878] focus:border-[#000878] transition-colors">
                 </div>
             </div>
 
-            {{-- Confirm Password --}}
-            <div>
-                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                    Konfirmasi Password Baru <span class="text-red-500">*</span>
-                </label>
-                <div class="relative">
-                    <input type="password" 
-                           name="password_confirmation" 
-                           id="confirmPassword"
-                           minlength="8"
-                           required
-                           class="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
-                    <button type="button" 
-                            onclick="togglePassword('confirmPassword', this)"
-                            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                </div>
+            <div class="flex justify-end pt-2">
+                <button type="submit" class="px-6 py-2 bg-gray-800 text-white text-sm font-bold rounded-lg hover:bg-gray-900 shadow-md hover:shadow-lg transition flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 19l-1 1-1 1-2-2-1 1-1 1-2-2 1-1 1-1 2-2 1-1 1-1 5.743-7.743A6 6 0 0115 7z"></path></svg>
+                    Update Password
+                </button>
             </div>
-
-            {{-- Password Requirements --}}
-            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p class="text-sm font-semibold text-blue-800 mb-2">
-                    <i class="fas fa-info-circle mr-1"></i>Persyaratan Password:
-                </p>
-                <ul class="text-xs text-blue-700 space-y-1 ml-5 list-disc">
-                    <li>Minimal 8 karakter</li>
-                    <li>Gunakan kombinasi huruf besar, huruf kecil, dan angka</li>
-                    <li>Hindari menggunakan informasi pribadi yang mudah ditebak</li>
-                    <li>Jangan gunakan password yang sama dengan akun lain</li>
-                </ul>
-            </div>
-        </div>
-
-        {{-- Submit Button --}}
-        <div class="flex items-center justify-end space-x-4 mt-6 pt-6 border-t border-gray-200">
-            <button type="reset" 
-                    class="px-6 py-3 bg-gray-200 text-gray-700 font-bold rounded-lg hover:bg-gray-300 transition">
-                <i class="fas fa-times mr-2"></i>Batal
-            </button>
-            <button type="submit" 
-                    class="px-6 py-3 bg-gradient-to-r from-pink-600 to-red-600 text-white font-bold rounded-lg hover:from-pink-700 hover:to-red-700 transition shadow-lg">
-                <i class="fas fa-lock mr-2"></i>Ubah Password
-            </button>
         </div>
     </form>
 </div>

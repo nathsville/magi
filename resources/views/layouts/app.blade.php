@@ -11,6 +11,7 @@
     
     {{-- SweetAlert2 CSS --}}
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.5/dist/sweetalert2.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
         /* Custom Scrollbar Styling */
@@ -69,39 +70,12 @@
             </div>
             
             {{-- Sidebar Menu --}}
-            <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
+            {{-- PERUBAHAN: Bagian Profil User lama di bawah ini SUDAH DIHAPUS. --}}
+            {{-- Profil user sekarang dimuat otomatis melalui @yield('sidebar') dari file sidebar-menu.blade.php --}}
+            <nav class="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar flex flex-col">
                 @yield('sidebar')
             </nav>
             
-            {{-- Sidebar Footer (User Profile) --}}
-            <div class="p-4 bg-slate-900/50 backdrop-blur-sm border-t border-slate-700/50">
-                <div class="flex items-center gap-3 mb-4">
-                    <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 p-[2px]">
-                        <div class="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-white font-bold text-sm">
-                            {{ strtoupper(substr(auth()->user()->nama, 0, 1)) }}
-                        </div>
-                    </div>
-                    
-                    <div class="flex-1 overflow-hidden">
-                        <h4 class="text-sm font-semibold truncate text-white">{{ auth()->user()->nama }}</h4>
-                        <div class="flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                            <p class="text-xs text-slate-400 truncate">{{ auth()->user()->role }}</p>
-                        </div>
-                    </div>
-                </div>
-
-                {{-- Logout Button --}}
-                <form action="{{ route('logout') }}" method="POST">
-                    @csrf
-                    <button type="submit" class="group flex items-center justify-center w-full gap-2 px-4 py-2 text-sm font-medium text-slate-300 transition-all duration-200 bg-slate-800/50 hover:bg-red-500/10 hover:text-red-400 rounded-lg border border-transparent hover:border-red-500/20">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 transition-transform group-hover:-translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                        </svg>
-                        <span>Keluar</span>
-                    </button>
-                </form>
-            </div>
         </aside>
 
         {{-- MAIN CONTENT SECTION --}}
@@ -127,13 +101,33 @@
                     </div>
                     
                     <div class="flex items-center space-x-4">
-                        {{-- Notification Icon --}}
-                        <button class="relative p-1 rounded-full hover:bg-gray-100 transition-colors">
+                        @php
+                            $userRole = auth()->user()->role;
+                            $notifRoute = '#';
+
+                            if ($userRole === 'Petugas Posyandu') {
+                                $notifRoute = route('posyandu.notifikasi.index');
+                            } 
+                            elseif ($userRole === 'Petugas Puskesmas') {
+                                $notifRoute = Route::has('puskesmas.notifikasi.index') ? route('puskesmas.notifikasi.index') : '#';
+                            }
+                            elseif ($userRole === 'Orang Tua') {
+                                $notifRoute = route('orangtua.notifikasi.index');
+                            }
+                            elseif ($userRole === 'Petugas DPPKB') {
+                                $notifRoute = Route::has('dppkb.notifikasi') ? route('dppkb.notifikasi') : '#';
+                            }
+                        @endphp
+
+                        {{-- Notification Icon Link --}}
+                        <a href="{{ $notifRoute }}" class="relative p-1 rounded-full hover:bg-gray-100 transition-colors inline-block">
                             <svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
                             </svg>
+                            
+                            {{-- Indikator Merah --}}
                             <span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
-                        </button>
+                        </a>
                         
                         <div class="hidden sm:block text-sm text-gray-600 font-medium">
                             {{ now()->format('d M Y') }}
@@ -245,7 +239,6 @@
         };
 
         // --- 3. Auto Trigger Toast from Laravel Session ---
-        // Script ini akan otomatis memunculkan SweetAlert jika ada session flash data
         document.addEventListener('DOMContentLoaded', function() {
             @if(session('success'))
                 window.showSuccessToast("{{ session('success') }}");
@@ -256,63 +249,21 @@
             @endif
         });
 
-        // Success Alert
+        // Helpers untuk alert manual
         window.showSuccess = function(title, text = '') {
-            Swal.fire({
-                icon: 'success',
-                title: title,
-                text: text,
-                confirmButtonColor: '#000878',
-                confirmButtonText: 'OK',
-                timer: 3000,
-                timerProgressBar: true
-            });
+            Swal.fire({ icon: 'success', title: title, text: text, confirmButtonColor: '#000878', confirmButtonText: 'OK', timer: 3000, timerProgressBar: true });
         };
-
-        // Error Alert
         window.showError = function(title, text = '') {
-            Swal.fire({
-                icon: 'error',
-                title: title,
-                text: text,
-                confirmButtonColor: '#dc2626',
-                confirmButtonText: 'OK'
-            });
+            Swal.fire({ icon: 'error', title: title, text: text, confirmButtonColor: '#dc2626', confirmButtonText: 'OK' });
         };
-
-        // Info Alert
         window.showInfo = function(title, text = '') {
-            Swal.fire({
-                icon: 'info',
-                title: title,
-                text: text,
-                confirmButtonColor: '#000878',
-                confirmButtonText: 'OK'
-            });
+            Swal.fire({ icon: 'info', title: title, text: text, confirmButtonColor: '#000878', confirmButtonText: 'OK' });
         };
-
-        // Warning Alert
         window.showWarning = function(title, text = '') {
-            Swal.fire({
-                icon: 'warning',
-                title: title,
-                text: text,
-                confirmButtonColor: '#f59e0b',
-                confirmButtonText: 'OK'
-            });
+            Swal.fire({ icon: 'warning', title: title, text: text, confirmButtonColor: '#f59e0b', confirmButtonText: 'OK' });
         };
-
-        // Loading Alert
         window.showLoading = function(title = 'Memproses...', text = 'Mohon tunggu') {
-            Swal.fire({
-                title: title,
-                text: text,
-                allowOutsideClick: false,
-                allowEscapeKey: false,
-                didOpen: () => {
-                    Swal.showLoading();
-                }
-            });
+            Swal.fire({ title: title, text: text, allowOutsideClick: false, allowEscapeKey: false, didOpen: () => { Swal.showLoading(); } });
         };
     </script>
 </body>

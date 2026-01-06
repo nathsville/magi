@@ -1,5 +1,6 @@
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
     <div class="px-6 py-4 border-b border-gray-200 bg-[#000878]">
+        {{-- ... Bagian Header Table Tetap Sama ... --}}
         <div class="flex items-center justify-between">
             <div class="flex items-center space-x-4">
                 <input type="checkbox" id="selectAll" 
@@ -71,18 +72,40 @@
                     <td class="px-6 py-4">
                         <div class="flex items-center">
                             <div class="flex-shrink-0 w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center font-bold text-sm border border-blue-100">
-                                {{ substr($data->dataPengukuran->anak->nama_anak, 0, 1) }}
+                                {{ substr($data->dataPengukuran->anak->nama_anak ?? '?', 0, 1) }}
                             </div>
                             <div class="ml-4">
                                 <div class="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors">
-                                    {{ $data->dataPengukuran->anak->nama_anak }}
+                                    {{ $data->dataPengukuran->anak->nama_anak ?? 'Data Anak Hilang' }}
                                 </div>
                                 <div class="text-xs text-gray-500 mt-0.5 flex items-center space-x-2">
                                     <span class="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
-                                        {{ $data->dataPengukuran->anak->jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan' }}
+                                        @if(($data->dataPengukuran->anak->jenis_kelamin ?? '') === 'L')
+                                            Laki-laki
+                                        @elseif(($data->dataPengukuran->anak->jenis_kelamin ?? '') === 'P')
+                                            Perempuan
+                                        @else
+                                            -
+                                        @endif
                                     </span>
                                     <span>•</span>
-                                    <span>{{ $data->dataPengukuran->umur_bulan }} bln</span>
+                                    
+                                    {{-- LOGIKA FORMAT UMUR (Tahun & Bulan) --}}
+                                    @php
+                                        // Ambil umur float, bulatkan ke bawah untuk ambil bulan penuh
+                                        $totalBulan = floor($data->dataPengukuran->umur_bulan ?? 0);
+                                        
+                                        // Hitung Tahun dan Sisa Bulan
+                                        $tahun = floor($totalBulan / 12);
+                                        $bulan = $totalBulan % 12;
+                                    @endphp
+
+                                    <span class="font-medium text-gray-700">
+                                        @if($tahun > 0)
+                                            {{ $tahun }} Thn
+                                        @endif
+                                        {{ $bulan }} Bln
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -123,10 +146,10 @@
                     {{-- Posyandu --}}
                     <td class="px-6 py-4 text-center">
                         <div class="text-sm font-medium text-gray-900">
-                            {{ $data->dataPengukuran->posyandu->nama_posyandu }}
+                            {{ $data->dataPengukuran->posyandu->nama_posyandu ?? '-' }}
                         </div>
                         <div class="text-xs text-gray-500">
-                            Kel. {{ $data->dataPengukuran->posyandu->kelurahan }}
+                            Kel. {{ $data->dataPengukuran->posyandu->kelurahan ?? '-' }}
                         </div>
                     </td>
 

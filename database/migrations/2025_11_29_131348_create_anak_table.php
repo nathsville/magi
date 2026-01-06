@@ -13,7 +13,12 @@ return new class extends Migration
             $table->foreignId('id_posyandu')->constrained('posyandu', 'id_posyandu')->onDelete('cascade');
             $table->foreignId('id_orangtua')->constrained('orang_tua', 'id_orangtua')->onDelete('cascade');
             $table->string('nama_anak', 100);
-            $table->string('nik_anak', 16)->unique();
+            
+            // PERUBAHAN DISINI:
+            // 1. Ubah jadi 'text' agar muat string enkripsi panjang
+            // 2. Hapus 'unique()' untuk sementara agar tidak error di database
+            $table->text('nik_anak'); 
+            
             $table->date('tanggal_lahir');
             $table->enum('jenis_kelamin', ['L', 'P']);
             $table->string('tempat_lahir', 100)->nullable();

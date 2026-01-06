@@ -20,13 +20,13 @@
             </div>
             <div>
                 <h1 class="text-2xl font-bold text-gray-900">Dashboard Orang Tua</h1>
-                <p class="text-sm text-gray-600 mt-1">Selamat Datang, {{ $orangTua->nama_ayah ?? $orangTua->nama_ibu }}</p>
+                <p class="text-sm text-gray-600 mt-1">Selamat Datang, {{ Auth::user()->nama }}</p>
             </div>
         </div>
         
         {{-- Profile Avatar Small --}}
         <div class="hidden md:block">
-            <img src="https://ui-avatars.com/api/?name={{ urlencode($orangTua->nama_ayah ?? $orangTua->nama_ibu) }}&background=000878&color=ffffff" 
+            <img src="https://ui-avatars.com/api/?name={{ urlencode(Auth::user()->nama) }}&background=000878&color=ffffff"
                  alt="Avatar" 
                  class="w-10 h-10 rounded-full border-2 border-gray-200 shadow-sm">
         </div>

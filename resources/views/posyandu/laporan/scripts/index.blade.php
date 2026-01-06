@@ -38,14 +38,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Fade-in animation for cards
-    animateCards();
-
     // Initialize tooltips
     initTooltips();
-
-    // Keyboard shortcuts
-    initKeyboardShortcuts();
 
     // Auto-select current month/year on first load
     if (!sessionStorage.getItem('laporanVisited')) {
@@ -114,20 +108,6 @@ function showToast(type, message) {
     }, 5000);
 }
 
-// Animate cards on load
-function animateCards() {
-    const cards = document.querySelectorAll('.grid > div, .space-y-6 > div');
-    cards.forEach((card, index) => {
-        card.style.opacity = '0';
-        card.style.transform = 'translateY(20px)';
-        setTimeout(() => {
-            card.style.transition = 'all 0.5s ease';
-            card.style.opacity = '1';
-            card.style.transform = 'translateY(0)';
-        }, index * 100);
-    });
-}
-
 // Initialize tooltips
 function initTooltips() {
     const tooltipElements = document.querySelectorAll('[data-tooltip]');
@@ -167,63 +147,6 @@ function initTooltips() {
     });
 }
 
-// Keyboard shortcuts
-function initKeyboardShortcuts() {
-    document.addEventListener('keydown', function(e) {
-        // Ctrl/Cmd + G: Generate laporan
-        if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
-            e.preventDefault();
-            document.getElementById('laporanForm').dispatchEvent(new Event('submit'));
-        }
-        
-        // Ctrl/Cmd + P: Select PDF format
-        if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
-            e.preventDefault();
-            const pdfRadio = document.querySelector('input[type="radio"][value="pdf"]');
-            if (pdfRadio) {
-                pdfRadio.checked = true;
-                pdfRadio.dispatchEvent(new Event('change'));
-            }
-        }
-        
-        // Ctrl/Cmd + E: Select Excel format
-        if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
-            e.preventDefault();
-            const excelRadio = document.querySelector('input[type="radio"][value="excel"]');
-            if (excelRadio) {
-                excelRadio.checked = true;
-                excelRadio.dispatchEvent(new Event('change'));
-            }
-        }
-        
-        // Escape: Back to dashboard
-        if (e.key === 'Escape') {
-            if (confirm('Kembali ke dashboard?')) {
-                window.location.href = "{{ route('posyandu.dashboard') }}";
-            }
-        }
-    });
-}
-
-// Form validation
-function validateLaporanForm() {
-    const bulan = document.querySelector('select[name="bulan"]').value;
-    const tahun = document.querySelector('select[name="tahun"]').value;
-    const format = document.querySelector('input[name="format"]:checked');
-    
-    if (!bulan || !tahun) {
-        showToast('error', 'Pilih bulan dan tahun terlebih dahulu');
-        return false;
-    }
-    
-    if (!format) {
-        showToast('error', 'Pilih format laporan');
-        return false;
-    }
-    
-    return true;
-}
-
 // Quick report download (from quick reports section)
 function quickDownload(bulan, tahun, format) {
     showLoadingOverlay();
@@ -261,86 +184,17 @@ function quickDownload(bulan, tahun, format) {
     form.submit();
 }
 
-// Month name helper
-function getMonthName(month) {
-    const months = [
-        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-    ];
-    return months[month - 1] || '';
-}
-
-// Show keyboard shortcuts help
-function showShortcutsHelp() {
-    const modal = document.createElement('div');
-    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
-    modal.innerHTML = `
-        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="text-xl font-bold text-gray-800">
-                    <i class="fas fa-keyboard text-teal-600 mr-2"></i>Keyboard Shortcuts
-                </h3>
-                <button onclick="this.closest('.fixed').remove()" class="text-gray-500 hover:text-gray-700">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
-            </div>
-            <div class="space-y-3">
-                <div class="flex items-center justify-between py-2 border-b border-gray-100">
-                    <span class="text-sm text-gray-700">Generate Laporan</span>
-                    <kbd class="px-2 py-1 bg-gray-100 rounded text-xs font-mono">Ctrl+G</kbd>
-                </div>
-                <div class="flex items-center justify-between py-2 border-b border-gray-100">
-                    <span class="text-sm text-gray-700">Pilih Format PDF</span>
-                    <kbd class="px-2 py-1 bg-gray-100 rounded text-xs font-mono">Ctrl+P</kbd>
-                </div>
-                <div class="flex items-center justify-between py-2 border-b border-gray-100">
-                    <span class="text-sm text-gray-700">Pilih Format Excel</span>
-                    <kbd class="px-2 py-1 bg-gray-100 rounded text-xs font-mono">Ctrl+E</kbd>
-                </div>
-                <div class="flex items-center justify-between py-2 border-b border-gray-100">
-                    <span class="text-sm text-gray-700">Kembali ke Dashboard</span>
-                    <kbd class="px-2 py-1 bg-gray-100 rounded text-xs font-mono">Esc</kbd>
-                </div>
-                <div class="flex items-center justify-between py-2">
-                    <span class="text-sm text-gray-700">Lihat Shortcuts</span>
-                    <kbd class="px-2 py-1 bg-gray-100 rounded text-xs font-mono">?</kbd>
-                </div>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    
-    // Close on click outside
-    modal.addEventListener('click', function(e) {
-        if (e.target === modal) {
-            modal.remove();
-        }
-    });
-}
-
-// Show shortcuts help on ? key
-document.addEventListener('keypress', function(e) {
-    if (e.key === '?') {
-        showShortcutsHelp();
-    }
-});
-
-// Add floating help button
-document.addEventListener('DOMContentLoaded', function() {
-    const helpButton = document.createElement('button');
-    helpButton.className = 'fixed bottom-6 right-6 w-14 h-14 bg-teal-600 text-white rounded-full shadow-2xl hover:bg-teal-700 transition transform hover:scale-110 z-40';
-    helpButton.innerHTML = '<i class="fas fa-question text-xl"></i>';
-    helpButton.onclick = showShortcutsHelp;
-    helpButton.setAttribute('data-tooltip', 'Keyboard Shortcuts (?)');
-    document.body.appendChild(helpButton);
-});
-
 // Statistics animation
 function animateStats() {
     const statNumbers = document.querySelectorAll('.text-4xl.font-bold, .text-2xl.font-bold');
     
     statNumbers.forEach(stat => {
-        const finalValue = parseInt(stat.textContent) || 0;
+        const originalText = stat.textContent.trim();
+        if (!/^\d+$/.test(originalText)) {
+            return;
+        }
+
+        const finalValue = parseInt(originalText) || 0;
         let currentValue = 0;
         const increment = Math.ceil(finalValue / 30);
         const duration = 1000;
@@ -447,43 +301,9 @@ function printSection(sectionId) {
     printWindow.document.close();
     printWindow.print();
 }
-
-// Console easter egg
-console.log('%c🏥 MaGi System', 'font-size: 20px; font-weight: bold; color: #0d9488;');
-console.log('%cLaporan Posyandu Module', 'font-size: 14px; color: #0891b2;');
-console.log('%cPress ? for keyboard shortcuts', 'font-size: 12px; color: #64748b;');
 </script>
 
 <style>
-/* Additional styles for animations */
-@keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-    to {
-        opacity: 1;
-    }
-}
-
-.animate-slide-up {
-    animation: slideUp 0.5s ease-out;
-}
-
-.animate-fade-in {
-    animation: fadeIn 0.3s ease-in;
-}
-
 /* Smooth scrolling */
 html {
     scroll-behavior: smooth;
@@ -547,26 +367,5 @@ button:active {
 
 .animate-bounce {
     animation: bounce 1s infinite;
-}
-
-/* Keyboard shortcut badge styles */
-kbd {
-    font-family: 'Courier New', monospace;
-    border: 1px solid #cbd5e1;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-/* Floating button pulse */
-@keyframes pulse {
-    0%, 100% {
-        box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.7);
-    }
-    50% {
-        box-shadow: 0 0 0 10px rgba(13, 148, 136, 0);
-    }
-}
-
-.fixed.bottom-6.right-6 {
-    animation: pulse 2s infinite;
 }
 </style>

@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Crypt; // Tambahan Wajib: Library Enkripsi
+use Illuminate\Contracts\Encryption\DecryptException; // Tambahan: Error handling
 
 class Anak extends Model
 {
@@ -12,9 +14,9 @@ class Anak extends Model
 
     protected $fillable = [
         'id_orangtua',
-        'id_posyandu', // Tambahan: Penting agar tidak error Mass Assignment saat create anak
+        'id_posyandu',
         'nama_anak',
-        'nik_anak',
+        'nik_anak', // Kolom ini yang akan kita enkripsi
         'tanggal_lahir',
         'jenis_kelamin',
         'tempat_lahir',
@@ -27,6 +29,38 @@ class Anak extends Model
         'created_at' => 'datetime'
     ];
 
+    // =================================================================
+    // IMPLEMENTASI ENKRIPSI AES-256 (CIA TRIAD: CONFIDENTIALITY)
+    // =================================================================
+
+    /**
+     * MUTATOR: Enkripsi otomatis saat data disimpan (Insert/Update).
+     * Nama function harus format: set[NamaKolomCamelCase]Attribute
+     */
+    public function setNikAnakAttribute($value)
+    {
+        // Ubah NIK asli menjadi Ciphertext sebelum masuk database
+        $this->attributes['nik_anak'] = Crypt::encryptString($value);
+    }
+
+    /**
+     * ACCESSOR: Dekripsi otomatis saat data diambil (Select).
+     * Sehingga di website terbaca angka biasa, tapi di database tetap acak.
+     */
+    public function getNikAnakAttribute($value)
+    {
+        try {
+            return Crypt::decryptString($value);
+        } catch (DecryptException $e) {
+            // Fail-safe: Jika data lama belum terenkripsi, tampilkan apa adanya
+            return $value;
+        }
+    }
+    
+    // =================================================================
+    // AKHIR IMPLEMENTASI ENKRIPSI
+    // =================================================================
+
     // Relationships
     public function orangTua()
     {
@@ -38,11 +72,6 @@ class Anak extends Model
         return $this->belongsTo(Posyandu::class, 'id_posyandu', 'id_posyandu');
     }
 
-    /**
-     * PERBAIKAN DI SINI:
-     * Mengubah nama dari 'pengukuran' menjadi 'dataPengukuran'
-     * agar sesuai dengan panggilan di Seeder (IntervensiStuntingSeeder)
-     */
     public function dataPengukuran()
     {
         return $this->hasMany(DataPengukuran::class, 'id_anak', 'id_anak');
@@ -51,7 +80,10 @@ class Anak extends Model
     public function pengukuranTerakhir()
     {
         return $this->hasOne(DataPengukuran::class, 'id_anak', 'id_anak')
-            ->orderBy('tanggal_ukur', 'desc');
+            ->ofMany([
+                'tanggal_ukur' => 'max',
+                'id_pengukuran' => 'max'
+            ]);
     }
 
     public function stuntingTerakhir()
@@ -59,10 +91,10 @@ class Anak extends Model
         return $this->hasOneThrough(
             DataStunting::class,
             DataPengukuran::class,
-            'id_anak', // Foreign key on DataPengukuran
-            'id_pengukuran', // Foreign key on DataStunting
-            'id_anak', // Local key on Anak
-            'id_pengukuran' // Local key on DataPengukuran
+            'id_anak',
+            'id_pengukuran',
+            'id_anak',
+            'id_pengukuran'
         )->orderBy('data_pengukuran.tanggal_ukur', 'desc');
     }
 
@@ -74,12 +106,20 @@ class Anak extends Model
     // Accessor: Calculate age in months
     public function getUmurBulanAttribute()
     {
-        return \Carbon\Carbon::parse($this->tanggal_lahir)->diffInMonths(\Carbon\Carbon::now());
+        if ($this->tanggal_lahir) {
+            return \Carbon\Carbon::parse($this->tanggal_lahir)->diffInMonths(\Carbon\Carbon::now());
+        }
+        return 0;
     }
 
     // Accessor: Calculate age in years
     public function getUmurTahunAttribute()
     {
-        return \Carbon\Carbon::parse($this->tanggal_lahir)->age;
+        if ($this->tanggal_lahir) {
+            return \Carbon\Carbon::parse($this->tanggal_lahir)->age;
+        }
+        return 0;
     }
 }
+
+

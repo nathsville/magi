@@ -49,28 +49,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // ============= QUICK STATS ANIMATION =============
-    
-    const statCards = document.querySelectorAll('.transform');
-    const observerOptions = {
-        threshold: 0.1,
-        rootMargin: '0px 0px -50px 0px'
-    };
-
-    const observer = new IntersectionObserver(function(entries) {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.classList.add('animate-fadeIn');
-                observer.unobserve(entry.target);
-            }
-        });
-    }, observerOptions);
-
-    statCards.forEach(card => {
-        card.style.opacity = '0';
-        observer.observe(card);
-    });
-
     // ============= NOTIFICATION BADGE PULSE =============
     
     const notifBadge = document.querySelector('.bg-red-500');
@@ -111,20 +89,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-
-    // ============= WELCOME ANIMATION =============
-    
-    const welcomeSection = document.querySelector('.bg-white.rounded-2xl');
-    if (welcomeSection) {
-        welcomeSection.style.opacity = '0';
-        welcomeSection.style.transform = 'translateY(-20px)';
-        
-        setTimeout(() => {
-            welcomeSection.style.transition = 'all 0.6s ease-out';
-            welcomeSection.style.opacity = '1';
-            welcomeSection.style.transform = 'translateY(0)';
-        }, 100);
-    }
 
     // ============= HELPER FUNCTIONS =============
     
@@ -181,24 +145,4 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Alt + D: Dashboard');
     console.log('Alt + A: Data Anak');
 });
-
-// ============= FADE IN ANIMATION =============
-const fadeInStyle = document.createElement('style');
-fadeInStyle.textContent = `
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    .animate-fadeIn {
-        animation: fadeIn 0.6s ease-out forwards;
-    }
-`;
-document.head.appendChild(fadeInStyle);
 </script>

@@ -27,32 +27,34 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {{-- Left Column: Data Anak & Info --}}
         <div class="space-y-6">
-            @include('pengukuran.partials.detail-child-info', ['pengukuran' => $pengukuran])
-            @include('pengukuran.partials.detail-measurement-info', ['pengukuran' => $pengukuran])
+            {{-- Perbaiki path include dengan menambahkan 'posyandu.' --}}
+            @include('posyandu.pengukuran.partials.detail-child-info', ['pengukuran' => $pengukuran])
+            @include('posyandu.pengukuran.partials.detail-measurement-info', ['pengukuran' => $pengukuran])
         </div>
 
         {{-- Right Column: Hasil & Aksi --}}
         <div class="lg:col-span-2 space-y-6">
             {{-- Z-Score & Status --}}
             @if($pengukuran->stunting)
-                @include('pengukuran.partials.detail-zscore-card', ['stunting' => $pengukuran->stunting])
+                @include('posyandu.pengukuran.partials.detail-zscore-card', ['stunting' => $pengukuran->stunting])
             @endif
 
             {{-- Data Antropometri --}}
-            @include('pengukuran.partials.detail-anthropometric', ['pengukuran' => $pengukuran])
+            @include('posyandu.pengukuran.partials.detail-anthropometric', ['pengukuran' => $pengukuran])
 
             {{-- Catatan --}}
             @if($pengukuran->catatan)
-                @include('pengukuran.partials.detail-notes', ['pengukuran' => $pengukuran])
+                @include('posyandu.pengukuran.partials.detail-notes', ['pengukuran' => $pengukuran])
             @endif
 
             {{-- Aksi --}}
-            @include('pengukuran.partials.detail-actions', ['pengukuran' => $pengukuran])
+            @include('posyandu.pengukuran.partials.detail-actions', ['pengukuran' => $pengukuran])
         </div>
     </div>
 </div>
 @endsection
 
 @push('scripts')
-    @include('pengukuran.scripts.detail')
+    {{-- Pastikan file ini dibuat (Langkah 2) --}}
+    @include('posyandu.pengukuran.scripts.detail')
 @endpush

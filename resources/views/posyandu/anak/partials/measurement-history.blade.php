@@ -26,16 +26,29 @@
                     @foreach($riwayatPengukuran as $m)
                     <tr class="hover:bg-gray-50 transition">
                         <td class="px-6 py-3 text-gray-900">
-                            {{ \Carbon\Carbon::parse($m->tanggal_ukur)->format('d/m/Y') }}
+                            {{ \Carbon\Carbon::parse($m->tanggal_ukur)->translatedFormat('d M Y') }}
                         </td>
-                        <td class="px-6 py-3 text-center text-gray-600">{{ $m->umur_bulan }} bln</td>
+                        <td class="px-6 py-3 text-center text-gray-600">
+                            @php
+                                $tahun = floor($m->umur_bulan / 12);
+                                $bulanSisa = floor($m->umur_bulan % 12);
+                            @endphp
+                            @if($tahun > 0)
+                                {{ $tahun }} Thn {{ $bulanSisa }} Bln
+                            @else
+                                {{ $bulanSisa }} Bln
+                            @endif
+                        </td>
                         <td class="px-6 py-3 text-center font-medium">{{ number_format($m->berat_badan, 1) }}</td>
                         <td class="px-6 py-3 text-center font-medium">{{ number_format($m->tinggi_badan, 1) }}</td>
                         <td class="px-6 py-3 text-center">
-                            @if($m->stunting)
+                            @if($m->dataStunting)
                                 <span class="px-2 py-1 rounded text-xs font-medium
-                                    {{ $m->stunting->status_stunting == 'Normal' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700' }}">
-                                    {{ $m->stunting->status_stunting }}
+                                    {{ $m->dataStunting->status_stunting == 'Normal' ? 'bg-green-100 text-green-700' : 
+                                    ($m->dataStunting->status_stunting == 'Stunting Berat' ? 'bg-red-100 text-red-700' : 
+                                    ($m->dataStunting->status_stunting == 'Stunting Sedang' ? 'bg-orange-100 text-orange-700' : 
+                                    'bg-yellow-100 text-yellow-700')) }}">
+                                    {{ $m->dataStunting->status_stunting }}
                                 </span>
                             @else
                                 -

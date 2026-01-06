@@ -24,29 +24,60 @@
             <tbody class="divide-y divide-gray-200 bg-white">
                 @forelse($riwayatPengukuran->reverse() as $pengukuran)
                 <tr class="hover:bg-gray-50 transition">
+                    {{-- Tanggal --}}
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
                         {{ \Carbon\Carbon::parse($pengukuran->tanggal_ukur)->format('d M Y') }}
                     </td>
+
+                    {{-- Umur (Format: X Thn Y Bln) --}}
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-center">
-                        {{ $pengukuran->umur_bulan }} bln
+                        @php
+                            $umurTotal = (int) $pengukuran->umur_bulan;
+                            $tahun = floor($umurTotal / 12);
+                            $bulan = $umurTotal % 12;
+                        @endphp
+                        
+                        @if($tahun > 0)
+                            <span class="font-bold text-gray-800">{{ $tahun }}</span> Thn
+                            <span class="font-bold text-gray-800">{{ $bulan }}</span> Bln
+                        @else
+                            <span class="font-bold text-gray-800">{{ $bulan }}</span> Bln
+                        @endif
                     </td>
+
+                    {{-- Berat Badan --}}
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-center font-semibold">
                         {{ number_format($pengukuran->berat_badan, 1) }}
                     </td>
+
+                    {{-- Tinggi Badan --}}
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-center font-semibold">
                         {{ number_format($pengukuran->tinggi_badan, 1) }}
                     </td>
+
+                    {{-- Lingkar Kepala --}}
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-center">
                         {{ number_format($pengukuran->lingkar_kepala, 1) }}
                     </td>
+
+                    {{-- Lingkar Lengan --}}
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-center">
                         {{ number_format($pengukuran->lingkar_lengan, 1) }}
                     </td>
+
+                    {{-- Status (Disesuaikan dengan Controller: dataStunting) --}}
                     <td class="px-6 py-4 whitespace-nowrap text-center">
-                        @if($pengukuran->stunting)
+                        @php
+                            // MENGGUNAKAN 'dataStunting' SESUAI CONTROLLER
+                            $statusObject = $pengukuran->dataStunting; 
+                            $statusLabel = $statusObject ? $statusObject->status_stunting : null;
+                            $isNormal = $statusLabel === 'Normal';
+                        @endphp
+
+                        @if($statusLabel)
                             <span class="px-2.5 py-1 text-xs font-medium rounded-full border
-                                {{ $pengukuran->stunting->status_stunting === 'Normal' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200' }}">
-                                {{ $pengukuran->stunting->status_stunting }}
+                                {{ $isNormal ? 'bg-green-50 text-green-700 border-green-200' : 'bg-orange-50 text-orange-700 border-orange-200' }}">
+                                {{ $statusLabel }}
                             </span>
                         @else
                             <span class="px-2.5 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-600 border border-gray-200">

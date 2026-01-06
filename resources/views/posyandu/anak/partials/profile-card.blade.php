@@ -16,11 +16,11 @@
         </div>
         <div class="flex items-center justify-between py-2 border-b border-gray-100">
             <span class="text-sm text-gray-500">Usia</span>
-            <span class="text-sm font-medium text-gray-900">{{ \Carbon\Carbon::parse($anak->tanggal_lahir)->age }} Thn ({{ \Carbon\Carbon::parse($anak->tanggal_lahir)->diffInMonths(now()) }} Bln)</span>
+            <span class="text-sm font-medium text-gray-900">{{ \Carbon\Carbon::parse($anak->tanggal_lahir)->age }} Thn ({{ round(\Carbon\Carbon::parse($anak->tanggal_lahir)->diffInMonths(now()) % 12) }} Bln)</span>
         </div>
         <div class="flex items-center justify-between py-2 border-b border-gray-100">
             <span class="text-sm text-gray-500">Tgl Lahir</span>
-            <span class="text-sm font-medium text-gray-900">{{ \Carbon\Carbon::parse($anak->tanggal_lahir)->format('d M Y') }}</span>
+            <span class="text-sm font-medium text-gray-900">{{ \Carbon\Carbon::parse($anak->tanggal_lahir)->translatedFormat('d F Y') }}</span>
         </div>
         <div class="flex items-center justify-between py-2 border-b border-gray-100">
             <span class="text-sm text-gray-500">Tempat Lahir</span>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use App\Models\DataStunting;
 use App\Models\DataPengukuran;
 use App\Models\Anak;
@@ -12,6 +13,7 @@ use App\Models\Puskesmas;
 use App\Models\Posyandu;
 use App\Models\Laporan;
 use App\Models\Notifikasi;
+use App\Models\User;
 use Carbon\Carbon;
 
 class DPPKBController extends Controller
@@ -95,6 +97,48 @@ class DPPKBController extends Controller
             'topPuskesmas',
             'notifikasi'
         ));
+    }
+
+    // ==================== PROFILE ====================
+    public function profile()
+    {
+        $pendingValidasi = DataStunting::where('status_validasi', 'Validated')->count();
+        
+        return view('dppkb.profile.index', compact('pendingValidasi'));
+    }
+
+    public function updateProfile(Request $request)
+    {
+        $user = Auth::user();
+        
+        $request->validate([
+            'nama' => 'required|string|max:255',
+            // Validasi email unik kecuali untuk user ini sendiri (menggunakan id_user)
+            'email' => 'required|email|max:255|unique:users,email,'.$user->id_user.',id_user',
+        ]);
+
+        // Update data user
+        User::where('id_user', $user->id_user)->update([
+            'nama' => $request->nama,
+            'email' => $request->email,
+        ]);
+
+        return back()->with('status', 'profile-updated');
+    }
+
+    public function updatePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required|current_password',
+            'password' => 'required|confirmed|min:8',
+        ]);
+
+        // Update password user
+        User::where('id_user', Auth::id())->update([
+            'password' => Hash::make($request->password),
+        ]);
+
+        return back()->with('status', 'password-updated');
     }
     
     // ==================== MONITORING ====================

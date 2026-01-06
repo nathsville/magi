@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasOne; // Tambahkan import ini
 use Carbon\Carbon;
 
 class DataPengukuran extends Model
@@ -13,7 +14,6 @@ class DataPengukuran extends Model
     protected $table = 'data_pengukuran';
     protected $primaryKey = 'id_pengukuran';
     
-    // Saya ubah ke true agar created_at terisi otomatis (penting untuk grafik/logs)
     public $timestamps = true; 
 
     protected $fillable = [
@@ -26,7 +26,7 @@ class DataPengukuran extends Model
         'tinggi_badan',
         'lingkar_kepala',
         'lingkar_lengan',
-        'cara_ukur',    // Saya tambahkan ini karena ada di Controller Anda
+        'cara_ukur',
         'status_gizi',
         'catatan',
     ];
@@ -41,7 +41,10 @@ class DataPengukuran extends Model
         'updated_at' => 'datetime',
     ];
 
-    // Relationships
+    // ==========================================
+    // RELATIONSHIPS
+    // ==========================================
+
     public function anak()
     {
         return $this->belongsTo(Anak::class, 'id_anak', 'id_anak');
@@ -58,18 +61,21 @@ class DataPengukuran extends Model
     }
 
     /**
-     * PERBAIKAN: Mengubah nama dari 'dataStunting' menjadi 'stunting'
-     * Agar sesuai dengan panggilan with('stunting') di Controller
+     * PENTING: Nama fungsi ini HARUS 'dataStunting' 
+     * karena di Controller dipanggil dengan ->with('dataStunting')
      */
-    public function stunting()
+    public function dataStunting(): HasOne
     {
         return $this->hasOne(DataStunting::class, 'id_pengukuran', 'id_pengukuran');
     }
 
-    // Helper methods
+    // ==========================================
+    // HELPER METHODS
+    // ==========================================
+
     public function hitungUmurBulan()
     {
-        if ($this->anak) {
+        if ($this->anak && $this->anak->tanggal_lahir) {
             $tanggalLahir = $this->anak->tanggal_lahir;
             return Carbon::parse($tanggalLahir)->diffInMonths($this->tanggal_ukur);
         }

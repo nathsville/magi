@@ -2,125 +2,157 @@
     <div class="overflow-x-auto">
         <table class="w-full">
             <thead>
-                <tr class="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
-                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        No
-                    </th>
-                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Data Anak
-                    </th>
-                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Pengukuran
-                    </th>
-                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Z-Score & Status
-                    </th>
-                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Posyandu
-                    </th>
-                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Tanggal
-                    </th>
-                    <th class="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Aksi
-                    </th>
+                <tr class="bg-gray-50 border-b border-gray-200">
+                    <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider w-16">No</th>
+                    <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Data Anak</th>
+                    <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Pengukuran</th>
+                    <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Z-Score (TB/U)</th>
+                    <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Lokasi</th>
+                    <th class="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Tanggal</th>
+                    <th class="px-6 py-4 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Aksi</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-gray-200">
+            <tbody class="divide-y divide-gray-200 bg-white">
                 @forelse($dataStunting as $index => $data)
-                <tr class="hover:bg-gray-50 transition">
+                @php
+                    $pengukuran = $data->dataPengukuran;
+                    $anak = $pengukuran->anak ?? null;
+                    $posyandu = $pengukuran->posyandu ?? null;
+                    
+                    // --- LOGIKA FORMAT UMUR (Tahun Bulan) ---
+                    $umurTotal = $pengukuran->umur_bulan;
+                    $thn = floor($umurTotal / 12);
+                    $bln = round(fmod($umurTotal, 12));
+                    
+                    if ($bln == 12) {
+                        $thn += 1;
+                        $bln = 0;
+                    }
+
+                    $textUmur = '';
+                    if ($thn > 0) {
+                        $textUmur .= $thn . ' Thn ';
+                    }
+                    if ($bln > 0 || $thn == 0) {
+                        $textUmur .= $bln . ' Bln';
+                    }
+                    // ----------------------------------------
+
+                    $format = function($val) {
+                        return (float)$val == (int)$val ? (int)$val : number_format($val, 1);
+                    };
+                @endphp
+
+                <tr class="hover:bg-gray-50 transition duration-150 ease-in-out group">
                     {{-- No --}}
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 align-top">
                         {{ $dataStunting->firstItem() + $index }}
                     </td>
 
                     {{-- Data Anak --}}
-                    <td class="px-6 py-4">
-                        <div class="flex items-center space-x-3">
-                            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-sm">
-                                {{ strtoupper(substr($data->dataPengukuran->anak->nama_anak, 0, 2)) }}
+                    <td class="px-6 py-4 align-top">
+                        <div class="flex items-start space-x-3">
+                            {{-- Avatar: Biru Solid (Tanpa Gradien) --}}
+                            <div class="flex-shrink-0">
+                                <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm
+                                    {{ $anak ? 'bg-blue-600' : 'bg-gray-200 text-gray-400' }}">
+                                    {{ $anak ? strtoupper(substr($anak->nama_anak, 0, 2)) : '?' }}
+                                </div>
                             </div>
+                            
+                            {{-- Info Text --}}
                             <div>
-                                <p class="text-sm font-semibold text-gray-900">
-                                    {{ $data->dataPengukuran->anak->nama_anak }}
-                                </p>
-                                <div class="flex items-center space-x-2 text-xs text-gray-600 mt-1">
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded bg-gray-100">
-                                        {{ $data->dataPengukuran->anak->jenis_kelamin === 'L' ? '👦 Laki-laki' : '👧 Perempuan' }}
-                                    </span>
-                                    <span>{{ $data->dataPengukuran->umur_bulan }} bulan</span>
+                                <div class="text-sm font-bold {{ $anak ? 'text-gray-900' : 'text-gray-400 italic' }}">
+                                    {{ $anak->nama_anak ?? 'Data Anak Terhapus' }}
+                                </div>
+                                <div class="flex flex-col gap-1 mt-1">
+                                    @if($anak)
+                                        <span class="inline-flex w-fit items-center px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                                            {{ $anak->jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan' }}
+                                        </span>
+                                        
+                                        {{-- Umur --}}
+                                        <span class="inline-flex items-center text-xs text-gray-500 font-medium mt-0.5">
+                                            <svg class="w-3.5 h-3.5 mr-1.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                            </svg>
+                                            {{ $textUmur }}
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-600 border border-red-100">
+                                            Data Invalid
+                                        </span>
+                                    @endif
                                 </div>
                             </div>
                         </div>
                     </td>
 
                     {{-- Pengukuran --}}
-                    <td class="px-6 py-4">
-                        <div class="space-y-1 text-xs">
-                            <div class="flex items-center">
-                                <span class="text-gray-600 w-16">BB:</span>
-                                <span class="font-semibold text-gray-900">{{ $data->dataPengukuran->berat_badan }} kg</span>
-                            </div>
-                            <div class="flex items-center">
-                                <span class="text-gray-600 w-16">TB:</span>
-                                <span class="font-semibold text-gray-900">{{ $data->dataPengukuran->tinggi_badan }} cm</span>
-                            </div>
-                            <div class="flex items-center">
-                                <span class="text-gray-600 w-16">LK:</span>
-                                <span class="font-semibold text-gray-900">{{ $data->dataPengukuran->lingkar_kepala }} cm</span>
-                            </div>
+                    <td class="px-6 py-4 align-top">
+                        <div class="grid grid-cols-[24px_1fr] gap-y-1 text-sm w-32">
+                            <span class="text-xs font-bold text-gray-400 uppercase">BB</span>
+                            <span class="font-medium text-gray-900 text-right">{{ $format($pengukuran->berat_badan) }} <span class="text-gray-400 text-xs font-normal">kg</span></span>
+                            
+                            <span class="text-xs font-bold text-gray-400 uppercase">TB</span>
+                            <span class="font-medium text-gray-900 text-right">{{ $format($pengukuran->tinggi_badan) }} <span class="text-gray-400 text-xs font-normal">cm</span></span>
+                            
+                            <span class="text-xs font-bold text-gray-400 uppercase">LK</span>
+                            <span class="font-medium text-gray-900 text-right">{{ $format($pengukuran->lingkar_kepala) }} <span class="text-gray-400 text-xs font-normal">cm</span></span>
                         </div>
                     </td>
 
                     {{-- Z-Score & Status --}}
-                    <td class="px-6 py-4">
-                        <div class="space-y-2">
-                            <div class="text-xs">
-                                <span class="text-gray-600">TB/U:</span>
-                                <span class="font-semibold ml-1 
-                                    {{ $data->zscore_tb_u >= -2 ? 'text-green-600' : 'text-red-600' }}">
+                    <td class="px-6 py-4 whitespace-nowrap align-top">
+                        <div class="flex flex-col items-start space-y-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs text-gray-500">TB/U:</span>
+                                <span class="text-sm font-bold {{ $data->zscore_tb_u < -2 ? 'text-red-600' : 'text-emerald-600' }}">
                                     {{ number_format($data->zscore_tb_u, 2) }}
                                 </span>
                             </div>
-                            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium
-                                {{ $data->status_stunting === 'Normal' ? 'bg-green-100 text-green-800' : '' }}
-                                {{ $data->status_stunting === 'Stunting Ringan' ? 'bg-yellow-100 text-yellow-800' : '' }}
-                                {{ $data->status_stunting === 'Stunting Sedang' ? 'bg-orange-100 text-orange-800' : '' }}
-                                {{ $data->status_stunting === 'Stunting Berat' ? 'bg-red-100 text-red-800' : '' }}">
+                            
+                            @php
+                                $statusStyles = match($data->status_stunting) {
+                                    'Normal' => 'bg-emerald-50 text-emerald-700 border-emerald-100 ring-emerald-600/20',
+                                    'Stunting Ringan' => 'bg-yellow-50 text-yellow-700 border-yellow-100 ring-yellow-600/20',
+                                    'Stunting Sedang' => 'bg-orange-50 text-orange-700 border-orange-100 ring-orange-600/20',
+                                    'Stunting Berat' => 'bg-red-50 text-red-700 border-red-100 ring-red-600/20',
+                                    default => 'bg-gray-50 text-gray-600 border-gray-100 ring-gray-500/10'
+                                };
+                            @endphp
+                            <span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border ring-1 ring-inset {{ $statusStyles }}">
                                 {{ $data->status_stunting }}
                             </span>
                         </div>
                     </td>
 
-                    {{-- Posyandu --}}
-                    <td class="px-6 py-4">
+                    {{-- Lokasi / Posyandu --}}
+                    <td class="px-6 py-4 align-top">
                         <div class="text-sm">
-                            <p class="font-medium text-gray-900">{{ $data->dataPengukuran->posyandu->nama_posyandu }}</p>
-                            <p class="text-xs text-gray-500">{{ $data->dataPengukuran->posyandu->kelurahan }}</p>
+                            <div class="font-bold text-gray-900">{{ $posyandu->nama_posyandu ?? '-' }}</div>
+                            <div class="text-xs text-gray-500 mt-0.5">{{ $posyandu->kelurahan ?? 'Lokasi tdk diketahui' }}</div>
                         </div>
                     </td>
 
                     {{-- Tanggal --}}
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm">
-                            <p class="font-medium text-gray-900">
-                                {{ \Carbon\Carbon::parse($data->dataPengukuran->tanggal_ukur)->format('d M Y') }}
-                            </p>
-                            <p class="text-xs text-gray-500">
-                                {{ \Carbon\Carbon::parse($data->dataPengukuran->tanggal_ukur)->diffForHumans() }}
-                            </p>
+                    <td class="px-6 py-4 whitespace-nowrap align-top">
+                        <div class="flex flex-col">
+                            <span class="text-sm font-medium text-gray-900">
+                                {{ $pengukuran->tanggal_ukur ? \Carbon\Carbon::parse($pengukuran->tanggal_ukur)->format('d M Y') : '-' }}
+                            </span>
+                            <span class="text-xs text-gray-500 mt-0.5">
+                                {{ $pengukuran->tanggal_ukur ? \Carbon\Carbon::parse($pengukuran->tanggal_ukur)->diffForHumans() : '' }}
+                            </span>
                         </div>
                     </td>
 
-                    {{-- Aksi --}}
-                    <td class="px-6 py-4 whitespace-nowrap">
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium align-top">
                         <a href="{{ route('puskesmas.validasi.detail', $data->id_stunting) }}" 
-                            class="inline-flex items-center px-3 py-1.5 text-xs font-medium text-white bg-primary rounded-lg hover:bg-blue-700 transition">
+                            class="text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-xs px-3 py-2 transition duration-150 inline-flex items-center shadow-sm">
                             <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
                             </svg>
                             Detail
                         </a>
@@ -128,13 +160,14 @@
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="7" class="px-6 py-12 text-center">
-                        <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                        </svg>
-                        <p class="text-gray-500 text-lg font-medium">Tidak ada data</p>
-                        <p class="text-gray-400 text-sm mt-2">Gunakan filter untuk mencari data atau ubah periode pencarian</p>
+                    <td colspan="7" class="px-6 py-12 text-center text-gray-500 bg-gray-50">
+                        <div class="flex flex-col items-center justify-center">
+                            <svg class="w-12 h-12 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <p class="text-base font-medium text-gray-900">Tidak ada data ditemukan</p>
+                            <p class="text-sm mt-1">Coba sesuaikan filter pencarian Anda.</p>
+                        </div>
                     </td>
                 </tr>
                 @endforelse
@@ -144,7 +177,7 @@
 
     {{-- Pagination --}}
     @if($dataStunting->hasPages())
-    <div class="px-6 py-4 border-t border-gray-200">
+    <div class="px-6 py-4 border-t border-gray-200 bg-gray-50">
         {{ $dataStunting->links() }}
     </div>
     @endif

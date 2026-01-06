@@ -78,7 +78,7 @@
                             </div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-900">
-                            {{ $item->umur_bulan }} bln
+                            {{ round($item->umur_bulan) }} bln
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center">
                             <div class="text-xs space-y-1">
@@ -93,9 +93,9 @@
                             </div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center">
-                            @if($item->stunting)
+                            @if($item->dataStunting)
                                 @php
-                                    $status = $item->stunting->status_stunting;
+                                    $status = $item->dataStunting->status_stunting;
                                     $colorClass = match($status) {
                                         'Normal' => 'bg-green-100 text-green-800',
                                         'Stunting Ringan' => 'bg-yellow-100 text-yellow-800',

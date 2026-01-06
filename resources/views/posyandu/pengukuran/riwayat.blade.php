@@ -45,16 +45,16 @@
     </div>
 
     {{-- Stats Cards --}}
-    @include('pengukuran.partials.stats-cards-riwayat', ['stats' => $stats])
+    @include('posyandu.pengukuran.partials.stats-cards-riwayat', ['stats' => $stats])
 
     {{-- Search & Filter --}}
-    @include('pengukuran.partials.search-filter-riwayat')
+    @include('posyandu.pengukuran.partials.search-filter-riwayat')
 
     {{-- Riwayat Table --}}
-    @include('pengukuran.partials.riwayat-table', ['pengukuranList' => $pengukuranList])
+    @include('posyandu.pengukuran.partials.riwayat-table', ['pengukuranList' => $pengukuranList])
 </div>
 
 @push('scripts')
-    @include('pengukuran.scripts.riwayat')
+    @include('posyandu.pengukuran.scripts.riwayat')
 @endpush
 @endsection

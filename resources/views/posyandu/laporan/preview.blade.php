@@ -104,14 +104,17 @@
                             @foreach($detailData as $item)
                             <tr>
                                 <td class="px-3 py-2 text-gray-600">{{ \Carbon\Carbon::parse($item->tanggal_ukur)->format('d/m') }}</td>
-                                <td class="px-3 py-2 font-medium text-gray-900">{{ $item->anak->nama_anak }}</td>
+                                <td class="px-3 py-2 font-medium text-gray-900">{{ optional($item->anak)->nama_anak ?? 'Data Anak Terhapus' }}</td>
                                 <td class="px-3 py-2 text-center text-gray-600">{{ $item->umur_bulan }} bln</td>
                                 <td class="px-3 py-2 text-center">{{ number_format($item->berat_badan, 1) }}</td>
                                 <td class="px-3 py-2 text-center">{{ number_format($item->tinggi_badan, 1) }}</td>
                                 <td class="px-3 py-2 text-center">
-                                    <span class="text-xs font-bold 
-                                        {{ $item->stunting->status_stunting === 'Normal' ? 'text-green-700' : 'text-red-700' }}">
-                                        {{ $item->stunting->status_stunting ?? '-' }}
+                                    @php
+                                        $status = optional($item->stunting)->status_stunting;
+                                        $colorClass = $status === 'Normal' ? 'text-green-700' : 'text-red-700';
+                                    @endphp
+                                    <span class="text-xs font-bold {{ $status ? $colorClass : 'text-gray-500' }}">
+                                        {{ $status ?? '-' }}
                                     </span>
                                 </td>
                             </tr>

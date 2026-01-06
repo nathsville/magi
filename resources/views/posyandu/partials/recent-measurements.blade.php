@@ -68,9 +68,9 @@
                             </div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center">
-                            @if($measurement->stunting)
+                            @if($measurement->dataStunting)
                                 @php
-                                    $status = $measurement->stunting->status_stunting;
+                                    $status = $measurement->dataStunting->status_stunting;
                                     $colors = [
                                         'Normal' => 'bg-green-100 text-green-800',
                                         'Stunting Ringan' => 'bg-yellow-100 text-yellow-800',
@@ -86,9 +86,9 @@
                             @endif
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-center">
-                            @if($measurement->stunting)
+                            @if($measurement->dataStunting)
                                 @php
-                                    $validasi = $measurement->stunting->status_validasi;
+                                    $validasi = $measurement->dataStunting->status_validasi;
                                     $iconClass = match($validasi) {
                                         'Validated' => 'text-green-500',
                                         'Rejected' => 'text-red-500',

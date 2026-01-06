@@ -37,18 +37,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
-
-    // Fade-in animations
-    const sections = document.querySelectorAll('.space-y-6 > div');
-    sections.forEach((section, index) => {
-        section.style.opacity = '0';
-        section.style.transform = 'translateY(20px)';
-        setTimeout(() => {
-            section.style.transition = 'all 0.5s ease';
-            section.style.opacity = '1';
-            section.style.transform = 'translateY(0)';
-        }, index * 100);
-    });
 });
 
 // Toast notification system

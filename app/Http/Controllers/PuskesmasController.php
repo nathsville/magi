@@ -17,6 +17,7 @@ use App\Helpers\AuditHelper;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log; // Added Log Facade
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 
@@ -121,63 +122,117 @@ class PuskesmasController extends Controller
     }
     
     /**
-     * Monitoring Data dengan filter
+     * Monitoring Data dengan filter dan Export
      */
     public function monitoring(Request $request)
     {
         $user = Auth::user();
-        // Ambil puskesmas aktif
         $puskesmas = Puskesmas::where('status', 'Aktif')->first();
         
         if (!$puskesmas) {
             return redirect()->route('puskesmas.dashboard')->with('error', 'Data Puskesmas tidak ditemukan');
         }
 
-        $posyanduIds = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)
-            ->pluck('id_posyandu');
+        $posyanduIds = Posyandu::where('id_puskesmas', $puskesmas->id_puskesmas)->pluck('id_posyandu');
         
         // --- Query Utama ---
-        $query = DataStunting::with([
-                'dataPengukuran.anak.orangTua',
-                'dataPengukuran.posyandu'
-            ])
+        $query = DataStunting::with(['dataPengukuran.anak.orangTua', 'dataPengukuran.posyandu'])
             ->whereHas('dataPengukuran', function($q) use ($posyanduIds) {
                 $q->whereIn('id_posyandu', $posyanduIds);
             });
         
-        // --- Filter Logic ---
+        // ... (Bagian Filter Logic tetap sama seperti sebelumnya) ...
         if ($request->filled('posyandu')) {
             $query->whereHas('dataPengukuran', function($q) use ($request) {
                 $q->where('id_posyandu', $request->posyandu);
             });
         }
-        
         if ($request->filled('status_gizi')) {
             $query->where('status_stunting', $request->status_gizi);
         }
-        
         if ($request->filled('tanggal_dari')) {
             $query->whereHas('dataPengukuran', function($q) use ($request) {
                 $q->whereDate('tanggal_ukur', '>=', $request->tanggal_dari);
             });
         }
-        
         if ($request->filled('tanggal_sampai')) {
             $query->whereHas('dataPengukuran', function($q) use ($request) {
                 $q->whereDate('tanggal_ukur', '<=', $request->tanggal_sampai);
             });
         }
-        
-        // Apply Search (Nama Anak)
         if ($request->filled('search')) {
             $query->whereHas('dataPengukuran.anak', function($q) use ($request) {
                 $q->where('nama_anak', 'like', '%' . $request->search . '%');
             });
         }
+
+        // --- EXPORT LOGIC ---
+        if ($request->has('export')) {
+            $exportData = $query->latest('created_at')->get();
+            $timestamp = now()->format('Y-m-d_H-i');
+
+            // 1. Export PDF
+            if ($request->export === 'pdf') {
+                // Load view PDF yang sudah diformat
+                $pdf = Pdf::loadView('puskesmas.monitoring.pdf', compact('exportData', 'puskesmas'));
+                return $pdf->download("Laporan_Monitoring_Stunting_{$timestamp}.pdf");
+            }
+
+            // 2. Export Excel / CSV
+            if ($request->export === 'excel' || $request->export === 'csv') {
+                $fileName = "Monitoring_Stunting_{$timestamp}.csv";
+                $headers = [
+                    "Content-type" => "text/csv",
+                    "Content-Disposition" => "attachment; filename=$fileName",
+                    "Pragma" => "no-cache",
+                    "Cache-Control" => "must-revalidate, post-check=0, pre-check=0",
+                    "Expires" => "0"
+                ];
+
+                $columns = ['No', 'Nama Anak', 'JK', 'Umur', 'BB (kg)', 'TB (cm)', 'Z-Score TB/U', 'Status Gizi', 'Posyandu', 'Tanggal Ukur'];
+
+                $callback = function() use($exportData, $columns) {
+                    $file = fopen('php://output', 'w');
+                    fputcsv($file, $columns);
+
+                    foreach ($exportData as $index => $row) {
+                        $p = $row->dataPengukuran;
+                        
+                        // --- LOGIKA FORMAT UMUR (Excel/CSV) ---
+                        $umurTotal = $p->umur_bulan;
+                        $thn = floor($umurTotal / 12);
+                        $bln = round(fmod($umurTotal, 12));
+                        if ($bln == 12) { $thn += 1; $bln = 0; }
+                        
+                        $strUmur = '';
+                        if ($thn > 0) $strUmur .= $thn . ' Thn ';
+                        if ($bln > 0 || $thn == 0) $strUmur .= $bln . ' Bln';
+                        // ---------------------------------------
+
+                        fputcsv($file, [
+                            $index + 1,
+                            $p->anak->nama_anak ?? 'Data Terhapus',
+                            $p->anak->jenis_kelamin ?? '-',
+                            trim($strUmur), // Gunakan variabel umur yang sudah diformat
+                            $p->berat_badan,
+                            $p->tinggi_badan,
+                            $row->zscore_tb_u,
+                            $row->status_stunting,
+                            $p->posyandu->nama_posyandu ?? '-',
+                            $p->tanggal_ukur,
+                        ]);
+                    }
+                    fclose($file);
+                };
+
+                return response()->stream($callback, 200, $headers);
+            }
+        }
+        // --- END EXPORT LOGIC ---
         
         $dataStunting = $query->latest('created_at')->paginate(20);
 
-        // Hitung berdasarkan filter yang diterapkan atau data keseluruhan jika tanpa filter
+        // Hitung berdasarkan filter yang diterapkan
         $statsQuery = clone $query; 
         $statsQuery->getQuery()->limit = null;
         $statsQuery->getQuery()->offset = null;
@@ -343,6 +398,7 @@ class PuskesmasController extends Controller
         ])->findOrFail($id);
         
         // Get Riwayat Pengukuran (untuk grafik)
+        // Note: Pastikan model DataPengukuran memiliki relasi dataStunting
         $riwayatPengukuran = DataPengukuran::where('id_anak', $dataStunting->dataPengukuran->id_anak)
             ->with('dataStunting')
             ->orderBy('tanggal_ukur')
@@ -484,12 +540,8 @@ class PuskesmasController extends Controller
     }
     
     // ========================================
-    // UC-PUSK-04: INPUT DATA PENGUKURAN (BACKUP)
+    // UC-PUSK-04: INPUT DATA PENGUKURAN
     // ========================================
-    
-    /**
-     * Form input data pengukuran
-     */
 
     /**
      * UC-PUSK-04: Input Data Pengukuran - Index
@@ -576,7 +628,8 @@ class PuskesmasController extends Controller
             
             $recentInputs = $recentData->map(function($data) {
                 return [
-                    'nama_anak' => $data->anak->nama_anak,
+                    'nama_anak' => $data->anak->nama_anak ?? 'Data Anak Hilang', 
+                    
                     'berat_badan' => $data->berat_badan,
                     'tinggi_badan' => $data->tinggi_badan,
                     'status_gizi' => $data->dataStunting->status_stunting ?? 'Pending',
@@ -748,8 +801,7 @@ class PuskesmasController extends Controller
      * Calculate Z-Score for anthropometric data
      * This is a SIMPLIFIED version for demonstration
      * PRODUCTION should call Python microservice with WHO lookup tables
-     * 
-     * @param float $beratBadan
+     * * @param float $beratBadan
      * @param float $tinggiBadan
      * @param int $umurBulan
      * @param string $jenisKelamin (L/P)
@@ -1448,7 +1500,8 @@ class PuskesmasController extends Controller
             ->distinct('id_anak')
             ->count('id_anak');
 
-        $totalStunting = DataStunting::whereHas('pengukuran', function($q) use ($posyanduIds, $startDate, $endDate) {
+        // FIX: Changed 'pengukuran' to 'dataPengukuran'
+        $totalStunting = DataStunting::whereHas('dataPengukuran', function($q) use ($posyanduIds, $startDate, $endDate) {
                 $q->whereIn('id_posyandu', $posyanduIds)
                   ->whereBetween('tanggal_ukur', [$startDate, $endDate]);
             })
@@ -1505,7 +1558,8 @@ class PuskesmasController extends Controller
                 ->distinct('id_anak')
                 ->count('id_anak');
 
-            $totalStunting = DataStunting::whereHas('pengukuran', function($q) use ($posyanduIds, $startDate, $endDate) {
+            // FIX: Changed 'pengukuran' to 'dataPengukuran'
+            $totalStunting = DataStunting::whereHas('dataPengukuran', function($q) use ($posyanduIds, $startDate, $endDate) {
                     $q->whereIn('id_posyandu', $posyanduIds)
                       ->whereBetween('tanggal_ukur', [$startDate, $endDate]);
                 })
